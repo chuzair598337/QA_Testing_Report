@@ -748,22 +748,67 @@
   .note-box textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
   .note-box textarea:disabled{ cursor:not-allowed; opacity:.55; }
 
-  /* ---------- Empty state (no test cases loaded yet) ---------- */
+  /* ---------- Empty states ---------- */
   .empty-state{
     background:var(--surface);
-    border:1px dashed var(--border-strong);
+    border:1px solid var(--border);
     border-radius:var(--radius);
-    padding:48px 24px;
+    box-shadow:var(--shadow);
+    padding:48px 28px;
     text-align:center;
     color:var(--ink-soft);
+    max-width:520px;
+    margin:0 auto;
   }
-  .empty-state p{ margin:0 0 6px; }
-  .empty-state .empty-hint{
-    font-size:13.5px;
+  .empty-state--filter{
+    margin-top:8px;
+  }
+  .empty-icon{
+    width:56px;
+    height:56px;
+    margin:0 auto 16px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--primary-soft);
+    color:var(--primary);
+  }
+  .empty-state--empty-suite .empty-icon{
+    background:var(--pending-bg);
+    color:var(--ink-soft);
+  }
+  .empty-state--filter .empty-icon{
+    background:var(--pending-bg);
     color:var(--ink-faint);
-    margin-bottom:18px;
   }
-  .empty-state button.btn{ margin:0 auto; }
+  .icon-lg{
+    width:24px;
+    height:24px;
+  }
+  .empty-title{
+    margin:0 0 8px;
+    font-size:18px;
+    font-weight:700;
+    color:var(--ink);
+    letter-spacing:-0.01em;
+  }
+  .empty-hint{
+    margin:0 auto 20px;
+    max-width:36em;
+    font-size:14px;
+    line-height:1.55;
+    color:var(--ink-soft);
+  }
+  .empty-hint strong{ color:var(--ink); font-weight:600; }
+  .empty-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    justify-content:center;
+  }
+  .empty-actions .btn{ margin:0; }
+  #filter-empty[hidden]{ display:none !important; }
 
   /* Applied while html2pdf is capturing the page */
   body.generating-pdf .head-chrome{ position:static; box-shadow:none; }
@@ -778,6 +823,7 @@
   body.generating-pdf .test-row.filtered-out{ display:block; }
   body.generating-pdf .submodule.filtered-out{ display:block; }
   body.generating-pdf .module.filtered-out{ display:block; }
+  body.generating-pdf #filter-empty{ display:none !important; }
   body.generating-pdf .module{ box-shadow:none; break-inside:avoid; }
 
   /* Focus visibility */

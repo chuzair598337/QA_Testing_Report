@@ -24,7 +24,10 @@ const ICON_PATHS = {
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   notePlus: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v4"/><path d="M10 9h4"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
-  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>'
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  fileJson: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/>'
 };
 function icon(name, cls){
   return `<svg class="icon ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
@@ -39,6 +42,7 @@ const docTitleEl = document.getElementById('doc-title');
 let currentFilter = 'all';
 let openMenuKey = null;
 let showSample = false;
+let suiteLoaded = false;
 let docTitle = docTitleEl.textContent;
 
 /* Builds the numbered module/sub-module/test-row structure from a plain
@@ -268,7 +272,7 @@ function buildPinnedChip(label, targetId, onUnpin){
 
 /* Export / Reset only make sense once test cases exist. */
 function updateActionButtons(){
-  const hasData = modules.length > 0;
+  const hasData = allTests().length > 0;
   document.getElementById('export-btn').disabled = !hasData;
   document.getElementById('export-pdf-btn').disabled = !hasData;
   document.getElementById('export-json-btn').disabled = !hasData;
@@ -276,27 +280,118 @@ function updateActionButtons(){
   if (!hasData) closeExportMenu();
 }
 
+const FILTER_LABELS = {
+  all: 'All',
+  pending: 'Pending',
+  pass: 'Passed',
+  fail: 'Failed'
+};
+
+function buildEmptyState({ variant, iconName, title, hint, actionsHtml }){
+  return `
+    <div class="empty-state empty-state--${variant}" role="status">
+      <div class="empty-icon" aria-hidden="true">${icon(iconName, 'icon-lg')}</div>
+      <h2 class="empty-title">${title}</h2>
+      <p class="empty-hint">${hint}</p>
+      ${actionsHtml ? `<div class="empty-actions">${actionsHtml}</div>` : ''}
+    </div>`;
+}
+
+function wireEmptyImportActions(){
+  const importBtn = document.getElementById('empty-import-btn');
+  if (importBtn) importBtn.addEventListener('click', () => document.getElementById('import-btn').click());
+  const sampleBtn = document.getElementById('load-sample-btn');
+  if (sampleBtn) sampleBtn.addEventListener('click', loadSample);
+}
+
+function renderIdleEmpty(){
+  const actions = [
+    `<button class="btn primary" id="empty-import-btn" type="button">${icon('upload')}<span>Import JSON</span></button>`,
+    showSample ? `<button class="btn" id="load-sample-btn" type="button">${icon('download')}<span>Load sample data</span></button>` : ''
+  ].filter(Boolean).join('');
+  root.innerHTML = buildEmptyState({
+    variant: 'idle',
+    iconName: 'inbox',
+    title: 'No test cases loaded',
+    hint: 'Import a test-cases JSON file to begin your QA run. Nothing is stored on the server — everything stays in this browser tab.',
+    actionsHtml: actions
+  });
+  wireEmptyImportActions();
+}
+
+function renderEmptySuite(){
+  const actions = [
+    `<button class="btn primary" id="empty-import-btn" type="button">${icon('upload')}<span>Import another file</span></button>`,
+    showSample ? `<button class="btn" id="load-sample-btn" type="button">${icon('download')}<span>Load sample data</span></button>` : ''
+  ].filter(Boolean).join('');
+  root.innerHTML = buildEmptyState({
+    variant: 'empty-suite',
+    iconName: 'fileJson',
+    title: 'This file has no test cases',
+    hint: 'The JSON loaded successfully, but it doesn’t contain any tests yet. Add modules with test cases, or import a different file.',
+    actionsHtml: actions
+  });
+  wireEmptyImportActions();
+}
+
+function updateFilterEmptyState(){
+  let el = document.getElementById('filter-empty');
+  const anyVisible = !!root.querySelector('.module:not(.filtered-out)');
+  const show = suiteLoaded && allTests().length > 0 && currentFilter !== 'all' && !anyVisible;
+
+  if (!show){
+    if (el){
+      el.hidden = true;
+      el.innerHTML = '';
+    }
+    return;
+  }
+
+  if (!el){
+    el = document.createElement('div');
+    el.id = 'filter-empty';
+    root.appendChild(el);
+  }
+
+  const label = FILTER_LABELS[currentFilter] || currentFilter;
+  el.hidden = false;
+  el.innerHTML = buildEmptyState({
+    variant: 'filter',
+    iconName: 'search',
+    title: `No ${label.toLowerCase()} cases`,
+    hint: `Nothing matches the <strong>${label}</strong> filter right now. Clear the filter to see the full suite, or keep working — matching cases will appear here as statuses change.`,
+    actionsHtml: `<button class="btn primary" id="clear-filter-btn" type="button">Show all cases</button>`
+  });
+  const clearBtn = document.getElementById('clear-filter-btn');
+  if (clearBtn){
+    clearBtn.addEventListener('click', () => {
+      currentFilter = 'all';
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+      applyFilter();
+    });
+  }
+}
+
 function render(){
   updateActionButtons();
   root.innerHTML = '';
   buildJumpNav();
 
-  if (modules.length === 0){
-    root.innerHTML = `
-      <div class="empty-state">
-        <p><strong>No test cases loaded.</strong></p>
-        <p class="empty-hint">Click <strong>Import</strong> above and choose a test-cases JSON file to begin.</p>
-        ${showSample ? `<button class="btn" id="load-sample-btn" type="button">${icon('download')}<span>Load sample data</span></button>` : ''}
-      </div>`;
-    const sampleBtn = document.getElementById('load-sample-btn');
-    if (sampleBtn) sampleBtn.addEventListener('click', loadSample);
+  if (!suiteLoaded){
+    renderIdleEmpty();
     renderPinnedBar();
     updateStats();
     return;
   }
 
-  modules.forEach(mod => {
-    const modEl = document.createElement('section');
+  if (allTests().length === 0){
+    renderEmptySuite();
+    renderPinnedBar();
+    updateStats();
+    return;
+  }
+
+  modules.forEach(mod => {    const modEl = document.createElement('section');
     modEl.className = 'module' + (mod.collapsed ? ' collapsed' : '');
     modEl.id = `mod-${mod.num}`;
 
@@ -542,6 +637,7 @@ function applyFilter(){
       modEl.classList.toggle('collapsed', !!(mod && mod.collapsed));
     }
   });
+  updateFilterEmptyState();
 }
 
 document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -742,6 +838,9 @@ function applyImport(parsed){
       docTitleEl.textContent = docTitle;
     }
     modules = buildModules(parsed.modules);
+    suiteLoaded = true;
+    currentFilter = 'all';
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
     render();
   };
 
