@@ -1,8 +1,8 @@
 # QA Testing Report
 
 A single-page, static, in-browser QA test-run shell. No backend, no build
-step, no database — one `index.html` file, hosted on GitHub Pages, that a
-tester opens in a browser tab.
+step, no database — a static single-page app (`index.html` plus `css/` and
+`js/`), hosted on GitHub Pages, that a tester opens in a browser tab.
 
 ## What this is
 
@@ -42,10 +42,16 @@ static PDF, not the JSON handoff artifact.
 
 | File | Responsibility |
 | --- | --- |
-| `index.html` | The entire app — markup, CSS, and JS in one file. No external JS dependency except `html2pdf.js`, loaded from cdnjs, used only by the Download PDF button. |
+| `index.html` | Page shell — header, empty main mount, confirm modal. Links stylesheets and scripts; no inline CSS/JS. |
+| `css/base.css` | Design tokens, layout, and component styles (header, stats, modules, test rows, modal). |
+| `css/responsive.css` | Breakpoints (`720px` / `480px`): sticky chrome, icon-only actions, compact stats/toolbar, touch-friendly list controls. |
+| `js/theme.js` | Light/dark theme toggle for the session (respects `prefers-color-scheme` on first load). |
+| `js/app.js` | Runtime: import/export, render modules/tests, filters, jump nav, pin/lock, stats, PDF export, confirm modal. |
 | `sample.json` | Demo test-case data, in the exact import schema, so the app has something to show without a real handoff file. Only offered when `config.json`'s `showSample` is `true`. |
 | `config.json` | `{ "showSample": boolean }`. Toggles whether the empty state offers a "Load sample data" option. Read defensively — if this file is missing or invalid, the app just behaves as `showSample: false`. |
 | `.github/workflows/pages.yml` | Deploys the repo root to GitHub Pages on every push to `main` (via `actions/upload-pages-artifact` + `actions/deploy-pages` — no build step). |
+
+No build step: GitHub Pages serves these static files as-is. The only external script is `html2pdf.js` from cdnjs (Download PDF).
 
 ## JSON schema
 
