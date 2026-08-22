@@ -37,7 +37,9 @@ design. Import → work → Export, one sitting, then send the file back.
 Optionally, at any point, **Export → Download PDF** produces a printable
 snapshot of the current state (all modules/sub-modules expanded, filters
 cleared) — a static PDF, not the JSON handoff artifact. **Export → Download
-JSON** is the results handoff file.
+JSON** is the results handoff file. **Export → Generate report** opens a
+modal of all passed and failed cases (with notes, in suite order) with
+Copy and Download actions.
 
 ## File structure
 

@@ -41,6 +41,10 @@
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
                 <span>Download JSON</span>
               </button>
+              <button type="button" class="dropdown-item" id="export-report-btn" role="menuitem">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg>
+                <span>Generate report</span>
+              </button>
             </div>
           </div>
           <button class="btn danger" id="reset-btn" aria-label="Reset all">
@@ -117,6 +121,31 @@
     <div class="modal-actions">
       <button class="btn" id="confirm-no">No</button>
       <button class="btn danger" id="confirm-yes">Yes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="report-modal" aria-hidden="true">
+  <div class="modal-box modal-box--report" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+    <div class="report-modal-header">
+      <div class="report-modal-heading">
+        <h2 id="report-modal-title">Test report</h2>
+        <p class="report-modal-sub" id="report-modal-sub"></p>
+      </div>
+      <button type="button" class="icon-btn report-modal-close" id="report-modal-close" aria-label="Close report">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="report-modal-body" id="report-modal-body"></div>
+    <div class="report-modal-footer">
+      <button type="button" class="btn" id="report-copy-btn">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <span id="report-copy-label">Copy to clipboard</span>
+      </button>
+      <button type="button" class="btn primary" id="report-download-btn">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        <span>Download</span>
+      </button>
     </div>
   </div>
 </div>

@@ -276,6 +276,7 @@ function updateActionButtons(){
   document.getElementById('export-btn').disabled = !hasData;
   document.getElementById('export-pdf-btn').disabled = !hasData;
   document.getElementById('export-json-btn').disabled = !hasData;
+  document.getElementById('export-report-btn').disabled = !hasData;
   document.getElementById('reset-btn').disabled = !hasData;
   if (!hasData) closeExportMenu();
 }
@@ -653,6 +654,7 @@ const exportBtn = document.getElementById('export-btn');
 const exportMenu = document.getElementById('export-menu');
 const exportPdfBtn = document.getElementById('export-pdf-btn');
 const exportJsonBtn = document.getElementById('export-json-btn');
+const exportReportBtn = document.getElementById('export-report-btn');
 
 function closeExportMenu(){
   exportMenu.classList.remove('open');
@@ -704,6 +706,7 @@ function downloadPdf(){
   const originalLabel = exportPdfBtn.querySelector('span').textContent;
   exportPdfBtn.disabled = true;
   exportJsonBtn.disabled = true;
+  exportReportBtn.disabled = true;
   exportBtn.disabled = true;
   exportPdfBtn.querySelector('span').textContent = 'Generating…';
   closeExportMenu();
@@ -745,6 +748,199 @@ exportJsonBtn.addEventListener('click', (e) => {
   if (exportJsonBtn.disabled) return;
   closeExportMenu();
   downloadJson();
+});
+exportReportBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (exportReportBtn.disabled) return;
+  closeExportMenu();
+  openReportModal();
+});
+
+/* ---------- Generate report modal (passed + failed with notes) ---------- */
+const reportModal = document.getElementById('report-modal');
+const reportModalBody = document.getElementById('report-modal-body');
+const reportModalSub = document.getElementById('report-modal-sub');
+const reportCopyBtn = document.getElementById('report-copy-btn');
+const reportCopyLabel = document.getElementById('report-copy-label');
+const reportDownloadBtn = document.getElementById('report-download-btn');
+let latestReportMarkdown = '';
+
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function collectReportCases(){
+  // Preserve JSON order: module → sub-module → tests; only pass/fail.
+  const sections = [];
+  let passed = 0;
+  let failed = 0;
+
+  modules.forEach(mod => {
+    const subSections = [];
+    mod.subModules.forEach(sm => {
+      const cases = sm.tests.filter(t => t.status === 'pass' || t.status === 'fail');
+      if (!cases.length) return;
+      cases.forEach(t => {
+        if (t.status === 'pass') passed += 1;
+        else failed += 1;
+      });
+      subSections.push({ num: sm.num, title: sm.title, cases });
+    });
+    if (subSections.length){
+      sections.push({ num: mod.num, title: mod.title, subModules: subSections });
+    }
+  });
+
+  return { sections, passed, failed, total: passed + failed };
+}
+
+function buildReportMarkdown(data){
+  const generatedAt = new Date().toLocaleString();
+  const lines = [];
+  lines.push(`# QA Test Report — ${docTitle}`);
+  lines.push('');
+  lines.push(`Generated: ${generatedAt}`);
+  lines.push(`Passed: ${data.passed} · Failed: ${data.failed} · Included: ${data.total}`);
+  lines.push('');
+  lines.push('Only passed and failed cases are included (pending omitted). Order matches the imported suite.');
+  lines.push('');
+
+  if (!data.total){
+    lines.push('_No passed or failed cases yet._');
+    return lines.join('\n');
+  }
+
+  data.sections.forEach(mod => {
+    lines.push(`## ${mod.num}. ${mod.title}`);
+    lines.push('');
+    mod.subModules.forEach(sm => {
+      lines.push(`### ${sm.num} · ${sm.title}`);
+      lines.push('');
+      sm.cases.forEach(t => {
+        const status = t.status === 'pass' ? 'PASSED' : 'FAILED';
+        lines.push(`- **${t.id}** · ${status} — ${t.text}`);
+        if (t.note && t.note.trim()){
+          lines.push(`  - Note: ${t.note.trim().replace(/\n/g, ' ')}`);
+        }
+      });
+      lines.push('');
+    });
+  });
+
+  return lines.join('\n').trim() + '\n';
+}
+
+function buildReportHtml(data){
+  if (!data.total){
+    return `<div class="report-empty"><strong>No passed or failed cases yet</strong>Mark cases as Pass or Fail to include them in this report. Pending cases are omitted.</div>`;
+  }
+
+  const generatedAt = new Date().toLocaleString();
+  let html = `<div class="report-doc">
+    <div class="report-doc-meta">
+      <span><strong>${escapeHtml(docTitle)}</strong></span>
+      <span>${escapeHtml(generatedAt)}</span>
+      <span><strong>${data.passed}</strong> passed</span>
+      <span><strong>${data.failed}</strong> failed</span>
+      <span><strong>${data.total}</strong> included</span>
+    </div>`;
+
+  data.sections.forEach(mod => {
+    html += `<section class="report-module">
+      <h3 class="report-module-title">${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h3>`;
+    mod.subModules.forEach(sm => {
+      html += `<div class="report-submodule">
+        <h4 class="report-submodule-title">${escapeHtml(sm.num)} · ${escapeHtml(sm.title)}</h4>`;
+      sm.cases.forEach(t => {
+        const statusLabel = t.status === 'pass' ? 'Passed' : 'Failed';
+        const note = (t.note || '').trim();
+        html += `<article class="report-case" data-status="${t.status}">
+          <div class="report-case-top">
+            <span class="report-case-id">${escapeHtml(t.id)}</span>
+            <span class="report-case-status ${t.status}">${statusLabel}</span>
+            <span class="report-case-text">${escapeHtml(t.text)}</span>
+          </div>
+          ${note ? `<div class="report-case-note"><span class="report-case-note-label">Note</span>${escapeHtml(note)}</div>` : ''}
+        </article>`;
+      });
+      html += `</div>`;
+    });
+    html += `</section>`;
+  });
+
+  html += `</div>`;
+  return html;
+}
+
+function openReportModal(){
+  const data = collectReportCases();
+  latestReportMarkdown = buildReportMarkdown(data);
+  reportModalBody.innerHTML = buildReportHtml(data);
+  reportModalSub.textContent = data.total
+    ? `${data.passed} passed · ${data.failed} failed · pending omitted`
+    : 'No passed or failed cases yet';
+  reportCopyLabel.textContent = 'Copy to clipboard';
+  reportCopyBtn.disabled = !data.total;
+  reportDownloadBtn.disabled = !data.total;
+  reportModal.classList.add('open');
+  reportModal.setAttribute('aria-hidden', 'false');
+  document.getElementById('report-modal-close').focus();
+}
+
+function closeReportModal(){
+  reportModal.classList.remove('open');
+  reportModal.setAttribute('aria-hidden', 'true');
+}
+
+document.getElementById('report-modal-close').addEventListener('click', closeReportModal);
+reportModal.addEventListener('click', (e) => {
+  if (e.target === reportModal) closeReportModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && reportModal.classList.contains('open')) closeReportModal();
+});
+
+reportCopyBtn.addEventListener('click', async () => {
+  if (!latestReportMarkdown) return;
+  try {
+    await navigator.clipboard.writeText(latestReportMarkdown);
+    reportCopyLabel.textContent = 'Copied!';
+    setTimeout(() => { reportCopyLabel.textContent = 'Copy to clipboard'; }, 1600);
+  } catch (err) {
+    // Fallback for older mobile browsers
+    const ta = document.createElement('textarea');
+    ta.value = latestReportMarkdown;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      reportCopyLabel.textContent = 'Copied!';
+      setTimeout(() => { reportCopyLabel.textContent = 'Copy to clipboard'; }, 1600);
+    } catch (e2) {
+      alert('Could not copy to clipboard.');
+    }
+    document.body.removeChild(ta);
+  }
+});
+
+reportDownloadBtn.addEventListener('click', () => {
+  if (!latestReportMarkdown) return;
+  const blob = new Blob([latestReportMarkdown], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `qa-test-report-${new Date().toISOString().slice(0, 10)}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 });
 
 /* ---------- Generic confirm modal — shared by Reset, Import, Load sample ---------- */

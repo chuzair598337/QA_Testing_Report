@@ -178,4 +178,29 @@
   .empty-hint {
     font-size: 13.5px;
   }
+  .modal-overlay#report-modal {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal-box--report {
+    max-height: 94vh;
+    border-radius: 14px 14px 0 0;
+    max-width: none;
+  }
+  .report-modal-header,
+  .report-modal-body {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .report-modal-footer {
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .report-modal-footer .btn {
+    min-width: 0;
+    flex: 1 1 calc(50% - 4px);
+  }
+  .report-case-top {
+    flex-direction: column;
+    gap: 6px;
+  }
 }
