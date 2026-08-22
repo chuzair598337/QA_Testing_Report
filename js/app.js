@@ -846,30 +846,31 @@ function collectReportCases(){
 function buildReportMarkdown(data){
   const generatedAt = new Date().toLocaleString();
   const lines = [];
-  lines.push(`# QA Test Report — ${docTitle}`);
+  lines.push(`QA Test Report`);
+  lines.push(`${docTitle}`);
   lines.push('');
   lines.push(`Generated: ${generatedAt}`);
-  lines.push(`Passed: ${data.passed} · Failed: ${data.failed} · Included: ${data.total}`);
-  lines.push('');
-  lines.push('Only passed and failed cases are included (pending omitted). Order matches the imported suite.');
+  lines.push(`Summary: ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)`);
   lines.push('');
 
   if (!data.total){
-    lines.push('_No passed or failed cases yet._');
+    lines.push('No passed or failed cases yet.');
     return lines.join('\n');
   }
 
   data.sections.forEach(mod => {
-    lines.push(`## ${mod.num}. ${mod.title}`);
+    lines.push(`${mod.num}. ${mod.title}`);
     lines.push('');
     mod.subModules.forEach(sm => {
-      lines.push(`### ${sm.num} · ${sm.title}`);
+      lines.push(`  ${sm.num} ${sm.title}`);
       lines.push('');
-      sm.cases.forEach(t => {
-        const status = t.status === 'pass' ? 'PASSED' : 'FAILED';
-        lines.push(`- **${t.id}** · ${status} — ${t.text}`);
+      sm.cases.forEach((t, idx) => {
+        const status = t.status === 'pass' ? 'Passed' : 'Failed';
+        lines.push(`    ${idx + 1}. [${status}] ${t.id} — ${t.text}`);
         if (t.note && t.note.trim()){
-          lines.push(`  - Note: ${t.note.trim().replace(/\n/g, ' ')}`);
+          t.note.trim().split(/\n/).forEach((noteLine, ni) => {
+            lines.push(ni === 0 ? `       - Note: ${noteLine}` : `         ${noteLine}`);
+          });
         }
       });
       lines.push('');
@@ -885,39 +886,35 @@ function buildReportHtml(data){
   }
 
   const generatedAt = new Date().toLocaleString();
-  let html = `<div class="report-doc">
-    <div class="report-doc-meta">
-      <span><strong>${escapeHtml(docTitle)}</strong></span>
-      <span>${escapeHtml(generatedAt)}</span>
-      <span><strong>${data.passed}</strong> passed</span>
-      <span><strong>${data.failed}</strong> failed</span>
-      <span><strong>${data.total}</strong> included</span>
-    </div>`;
+  let html = `<article class="report-doc">
+    <header class="report-doc-header">
+      <p class="report-doc-kicker">QA Test Report</p>
+      <h3 class="report-doc-title">${escapeHtml(docTitle)}</h3>
+      <p class="report-doc-meta">Generated: ${escapeHtml(generatedAt)}</p>
+      <p class="report-doc-meta">Summary: ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)</p>
+    </header>`;
 
   data.sections.forEach(mod => {
     html += `<section class="report-module">
-      <h3 class="report-module-title">${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h3>`;
+      <h4 class="report-module-title">${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h4>`;
     mod.subModules.forEach(sm => {
       html += `<div class="report-submodule">
-        <h4 class="report-submodule-title">${escapeHtml(sm.num)} · ${escapeHtml(sm.title)}</h4>`;
+        <h5 class="report-submodule-title">${escapeHtml(sm.num)} ${escapeHtml(sm.title)}</h5>
+        <ol class="report-case-list">`;
       sm.cases.forEach(t => {
         const statusLabel = t.status === 'pass' ? 'Passed' : 'Failed';
         const note = (t.note || '').trim();
-        html += `<article class="report-case" data-status="${t.status}">
-          <div class="report-case-top">
-            <span class="report-case-id">${escapeHtml(t.id)}</span>
-            <span class="report-case-status ${t.status}">${statusLabel}</span>
-            <span class="report-case-text">${escapeHtml(t.text)}</span>
-          </div>
-          ${note ? `<div class="report-case-note"><span class="report-case-note-label">Note</span>${escapeHtml(note)}</div>` : ''}
-        </article>`;
+        html += `<li class="report-case-item">
+          <p class="report-case-line"><span class="report-case-status-text">[${escapeHtml(statusLabel)}]</span> ${escapeHtml(t.id)} — ${escapeHtml(t.text)}</p>
+          ${note ? `<ul class="report-note-list"><li><span class="report-note-label">Note:</span> ${escapeHtml(note)}</li></ul>` : ''}
+        </li>`;
       });
-      html += `</div>`;
+      html += `</ol></div>`;
     });
     html += `</section>`;
   });
 
-  html += `</div>`;
+  html += `</article>`;
   return html;
 }
 
