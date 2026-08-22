@@ -232,8 +232,10 @@
     min-width: 0;
     flex: 1 1 calc(50% - 4px);
   }
-  .report-case-top {
-    flex-direction: column;
-    gap: 6px;
+  .report-doc-title {
+    font-size: 16px;
+  }
+  .report-case-list {
+    padding-left: 1.2em;
   }
 }
