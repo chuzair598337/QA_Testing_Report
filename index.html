@@ -401,6 +401,11 @@
     border-top:1px solid var(--border);
   }
   .module.collapsed .module-body{ display:none; }
+  /* .module clips its body's rounded corners via overflow:hidden, but that
+     also clips the absolutely-positioned Pin/Lock dropdown when the module
+     (or a sub-module inside it) is short/collapsed — let it escape while a
+     menu inside is open, and outrank the next module card while doing so. */
+  .module.menu-open{ overflow:visible; position:relative; z-index:40; }
 
   .lock-badge{ display:inline-flex; color:var(--primary); flex-shrink:0; }
 
@@ -503,24 +508,22 @@
 
   .test-main{
     display:flex;
-    align-items:flex-start;
+    align-items:center;
     gap:10px;
-    flex-wrap:wrap;
+    flex-wrap:nowrap;
   }
   .test-id{
     font-family:var(--mono);
     font-size:12.5px;
     color:var(--ink-faint);
-    padding-top:4px;
     min-width:56px;
     flex-shrink:0;
   }
   .test-text{
-    flex:1 1 260px;
+    flex:1 1 auto;
     font-size:14px;
     color:var(--ink);
-    padding-top:3px;
-    min-width:180px;
+    min-width:0;
   }
   .test-controls{
     display:flex;
@@ -534,7 +537,6 @@
     width:8px; height:8px;
     border-radius:50%;
     flex-shrink:0;
-    margin-top:6px;
   }
   .status-dot.pending{ background:var(--pending); }
   .status-dot.pass{ background:var(--pass); }
@@ -645,8 +647,11 @@
   @media (max-width:720px){
     .stat-grid{ grid-template-columns:repeat(2,1fr); }
     .head-top{ flex-direction:column; }
+    .test-main{ flex-wrap:wrap; align-items:flex-start; }
+    .test-id{ min-width:auto; padding-top:4px; }
+    .test-text{ padding-top:3px; }
+    .status-dot{ margin-top:6px; }
     .test-controls{ margin-left:0; width:100%; justify-content:space-between; }
-    .test-id{ min-width:auto; }
     .note-box{ margin-left:0; }
     .module-head{ flex-wrap:wrap; }
   }
@@ -844,6 +849,19 @@ function icon(name, cls){
   return `<svg class="icon ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
 }
 
+/* Escapes user/dev-authored text (module/sub-module titles, test text) before
+   it goes into an innerHTML template — imported JSON is not guaranteed to be
+   HTML-safe (e.g. test text like "Age < 18 blocks signup" would otherwise be
+   parsed as a tag and silently dropped, or worse). */
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const root = document.getElementById('report-root');
 const jumpModuleSel = document.getElementById('jump-module');
 const jumpSubmoduleSel = document.getElementById('jump-submodule');
@@ -984,6 +1002,7 @@ function toggleLockSub(subNum){
 function closeAllMenus(){
   document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
   document.querySelectorAll('.icon-btn[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('.module.menu-open').forEach(m => m.classList.remove('menu-open'));
   openMenuKey = null;
 }
 
@@ -1035,6 +1054,8 @@ function buildMenuWrap(kind, num, pinned, locked, onPin, onLock){
       menu.classList.add('open');
       btn.setAttribute('aria-expanded', 'true');
       openMenuKey = key;
+      const moduleEl = wrap.closest('.module');
+      if (moduleEl) moduleEl.classList.add('menu-open');
     }
   });
 
@@ -1120,7 +1141,7 @@ function render(){
     headLeft.innerHTML = `
       <span class="chevron-icon">${icon('chevronDown')}</span>
       <span class="module-num">${mod.num}.</span>
-      <span class="module-title">${mod.title}</span>
+      <span class="module-title">${escapeHtml(mod.title)}</span>
       <span class="module-count" data-mod-count="${mod.num}"></span>
       <div class="mini-bar" data-mod-bar="${mod.num}">
         <div class="progress-seg pass" style="width:0%"></div>
@@ -1156,7 +1177,7 @@ function render(){
       smHeadLeft.innerHTML = `
         <span class="chevron-icon">${icon('chevronDown')}</span>
         <span class="sub-num">${sm.num}.</span>
-        <span class="sub-title-text">${sm.title}</span>
+        <span class="sub-title-text">${escapeHtml(sm.title)}</span>
         <span class="sub-count" data-sub-count="${sm.num}"></span>
         <div class="mini-bar" data-sub-bar="${sm.num}">
           <div class="progress-seg pass" style="width:0%"></div>
@@ -1203,7 +1224,7 @@ function renderTestRow(t, locked){
   main.innerHTML = `
     <span class="status-dot ${t.status}"></span>
     <span class="test-id">${t.id}.</span>
-    <span class="test-text">${t.text}</span>
+    <span class="test-text">${escapeHtml(t.text)}</span>
     <div class="test-controls">
       <span class="status-select-wrap" data-val="${t.status}">
         <select class="status-select" data-val="${t.status}" ${locked ? 'disabled' : ''}>
@@ -1535,6 +1556,16 @@ function loadSample(){
     .then(applyImport)
     .catch(() => alert('Could not load sample.json.'));
 }
+
+/* Warn before closing/reloading the tab while test cases are loaded — there is
+   no persistence layer by design (see README), so this is the only guard
+   against losing in-progress work before Export. */
+window.addEventListener('beforeunload', (e) => {
+  if (modules.length > 0){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 render();
 
