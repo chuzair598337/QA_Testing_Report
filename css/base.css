@@ -512,6 +512,15 @@
   }
   .dropdown-item:hover{ background:var(--hover-bg); }
   .dropdown-item .icon{ color:var(--ink-soft); }
+  .export-wrap{ position:relative; flex-shrink:0; }
+  .export-menu{
+    min-width:168px;
+    z-index:60;
+  }
+  .export-menu .dropdown-item[disabled]{
+    opacity:.55;
+    cursor:progress;
+  }
 
   /* Test case row */
   .test-row{
@@ -640,12 +649,6 @@
   }
   .note-box textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
   .note-box textarea:disabled{ cursor:not-allowed; opacity:.55; }
-  .note-hint{
-    font-family:var(--mono);
-    font-size:10px;
-    color:var(--ink-faint);
-    margin-top:3px;
-  }
 
   /* ---------- Empty state (no test cases loaded yet) ---------- */
   .empty-state{

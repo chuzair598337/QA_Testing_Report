@@ -169,7 +169,7 @@ function toggleLockSub(subNum){
 
 function closeAllMenus(){
   document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
-  document.querySelectorAll('.icon-btn[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
   openMenuKey = null;
 }
 
@@ -266,12 +266,14 @@ function buildPinnedChip(label, targetId, onUnpin){
   return chip;
 }
 
-/* Download PDF / Export / Reset only make sense once test cases exist. */
+/* Export / Reset only make sense once test cases exist. */
 function updateActionButtons(){
   const hasData = modules.length > 0;
-  document.getElementById('pdf-btn').disabled = !hasData;
   document.getElementById('export-btn').disabled = !hasData;
+  document.getElementById('export-pdf-btn').disabled = !hasData;
+  document.getElementById('export-json-btn').disabled = !hasData;
   document.getElementById('reset-btn').disabled = !hasData;
+  if (!hasData) closeExportMenu();
 }
 
 function render(){
@@ -405,8 +407,7 @@ function renderTestRow(t, locked){
   const noteBox = document.createElement('div');
   noteBox.className = 'note-box';
   noteBox.innerHTML = `
-    <textarea placeholder="Optional note — reproduction steps, screenshot ref, ticket link…" ${locked ? 'disabled' : ''}></textarea>
-    <div class="note-hint">Notes are optional for both passed and failed cases.</div>`;
+    <textarea placeholder="Optional note — reproduction steps, screenshot ref, ticket link…" ${locked ? 'disabled' : ''}></textarea>`;
   row.appendChild(noteBox);
 
   const textarea = noteBox.querySelector('textarea');
@@ -533,14 +534,65 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
-/* PDF export — renders the same page into a downloadable PDF via html2pdf.js */
-document.getElementById('pdf-btn').addEventListener('click', () => {
-  const btn = document.getElementById('pdf-btn');
-  const label = document.getElementById('pdf-label');
-  const originalLabel = label.textContent;
-  btn.disabled = true;
-  label.textContent = 'Generating…';
-  btn.setAttribute('aria-label', 'Generating…');
+/* ---------- Export menu: Download PDF | Download JSON ---------- */
+const exportBtn = document.getElementById('export-btn');
+const exportMenu = document.getElementById('export-menu');
+const exportPdfBtn = document.getElementById('export-pdf-btn');
+const exportJsonBtn = document.getElementById('export-json-btn');
+
+function closeExportMenu(){
+  exportMenu.classList.remove('open');
+  exportBtn.setAttribute('aria-expanded', 'false');
+}
+function openExportMenu(){
+  closeAllMenus();
+  exportMenu.classList.add('open');
+  exportBtn.setAttribute('aria-expanded', 'true');
+}
+
+exportBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (exportBtn.disabled) return;
+  if (exportMenu.classList.contains('open')) closeExportMenu();
+  else openExportMenu();
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.export-wrap')) closeExportMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeExportMenu();
+});
+
+function downloadJson(){
+  const payload = {
+    docTitle: docTitle,
+    modules: modules.map(mod => ({
+      title: mod.title,
+      subModules: mod.subModules.map(sm => ({
+        title: sm.title,
+        tests: sm.tests.map(t => ({ text: t.text, status: t.status, note: t.note }))
+      }))
+    }))
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `qa-test-results-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadPdf(){
+  const originalLabel = exportPdfBtn.querySelector('span').textContent;
+  exportPdfBtn.disabled = true;
+  exportJsonBtn.disabled = true;
+  exportBtn.disabled = true;
+  exportPdfBtn.querySelector('span').textContent = 'Generating…';
+  closeExportMenu();
 
   document.querySelectorAll('.module.collapsed').forEach(m => m.classList.add('was-collapsed'));
   document.querySelectorAll('.submodule.collapsed').forEach(m => m.classList.add('was-collapsed-sub'));
@@ -555,20 +607,30 @@ document.getElementById('pdf-btn').addEventListener('click', () => {
     pagebreak:    { mode: ['css', 'legacy'] }
   };
 
-  html2pdf().set(opt).from(document.body).save().then(() => {
+  const restore = () => {
     document.body.classList.remove('generating-pdf');
     document.querySelectorAll('.was-collapsed').forEach(m => { m.classList.add('collapsed'); m.classList.remove('was-collapsed'); });
     document.querySelectorAll('.was-collapsed-sub').forEach(m => { m.classList.add('collapsed'); m.classList.remove('was-collapsed-sub'); });
-    btn.disabled = false;
-    label.textContent = originalLabel;
-    btn.setAttribute('aria-label', originalLabel);
-  }).catch(() => {
-    document.body.classList.remove('generating-pdf');
-    btn.disabled = false;
-    label.textContent = originalLabel;
-    btn.setAttribute('aria-label', originalLabel);
+    exportPdfBtn.querySelector('span').textContent = originalLabel;
+    updateActionButtons();
+  };
+
+  html2pdf().set(opt).from(document.body).save().then(restore).catch(() => {
+    restore();
     alert('PDF generation failed. Please try again.');
   });
+}
+
+exportPdfBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (exportPdfBtn.disabled) return;
+  downloadPdf();
+});
+exportJsonBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (exportJsonBtn.disabled) return;
+  closeExportMenu();
+  downloadJson();
 });
 
 /* ---------- Generic confirm modal — shared by Reset, Import, Load sample ---------- */
@@ -675,29 +737,6 @@ function applyImport(parsed){
     doImport();
   }
 }
-
-/* ---------- Export ---------- */
-document.getElementById('export-btn').addEventListener('click', () => {
-  const payload = {
-    docTitle: docTitle,
-    modules: modules.map(mod => ({
-      title: mod.title,
-      subModules: mod.subModules.map(sm => ({
-        title: sm.title,
-        tests: sm.tests.map(t => ({ text: t.text, status: t.status, note: t.note }))
-      }))
-    }))
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `qa-test-results-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-});
 
 /* ---------- Sample data (only offered when config.json enables it) ---------- */
 function loadSample(){

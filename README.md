@@ -30,13 +30,14 @@ design. Import → work → Export, one sitting, then send the file back.
 4. **QA** works through every test case: sets each to Pass/Fail, adds notes
    as needed, uses filters/jump-nav/pin/lock/collapse to navigate a large
    suite.
-5. **QA** clicks **Export**, which downloads a results JSON file (same
-   schema, now carrying every `status`/`note`).
+5. **QA** clicks **Export**, then **Download JSON**, which downloads a
+   results JSON file (same schema, now carrying every `status`/`note`).
 6. **QA** sends that downloaded file back to dev.
 
-Optionally, at any point, **Download PDF** produces a printable snapshot of
-the current state (all modules/sub-modules expanded, filters cleared) — a
-static PDF, not the JSON handoff artifact.
+Optionally, at any point, **Export → Download PDF** produces a printable
+snapshot of the current state (all modules/sub-modules expanded, filters
+cleared) — a static PDF, not the JSON handoff artifact. **Export → Download
+JSON** is the results handoff file.
 
 ## File structure
 
@@ -51,7 +52,7 @@ static PDF, not the JSON handoff artifact.
 | `config.json` | `{ "showSample": boolean }`. Toggles whether the empty state offers a "Load sample data" option. Read defensively — if this file is missing or invalid, the app just behaves as `showSample: false`. |
 | `.github/workflows/pages.yml` | Deploys the repo root to GitHub Pages on every push to `main` (via `actions/upload-pages-artifact` + `actions/deploy-pages` — no build step). |
 
-No build step: GitHub Pages serves these static files as-is. The only external script is `html2pdf.js` from cdnjs (Download PDF).
+No build step: GitHub Pages serves these static files as-is. The only external script is `html2pdf.js` from cdnjs (used by **Export → Download PDF**).
 
 ## JSON schema
 
