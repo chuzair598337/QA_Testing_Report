@@ -122,6 +122,29 @@
     gap:16px;
     flex-wrap:wrap;
     margin-bottom:16px;
+    position:relative;
+  }
+  .nav-toggle{
+    display:none;
+    appearance:none;
+    -webkit-appearance:none;
+    align-items:center;
+    justify-content:center;
+    width:42px;
+    height:42px;
+    padding:0;
+    border-radius:8px;
+    border:1px solid var(--border-strong);
+    background:var(--surface);
+    color:var(--ink);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .nav-toggle:hover{ background:var(--hover-bg); }
+  .nav-toggle[aria-expanded="true"]{
+    background:var(--primary-soft);
+    border-color:var(--primary);
+    color:var(--primary);
   }
   .head-title-block .eyebrow{
     font-family:var(--mono);
@@ -815,6 +838,7 @@
   body.generating-pdf header.report-head{ box-shadow:none; }
   body.generating-pdf .head-actions,
   body.generating-pdf .toolbar,
+  body.generating-pdf .nav-toggle,
   body.generating-pdf .note-toggle,
   body.generating-pdf .chevron-icon,
   body.generating-pdf .menu-wrap{ display:none; }
@@ -826,7 +850,15 @@
   body.generating-pdf #filter-empty{ display:none !important; }
   body.generating-pdf .module{ box-shadow:none; break-inside:avoid; }
 
-  /* Focus visibility */
+  /* Hide KPI / filters / jump until a JSON suite is loaded */
+  body:not(.suite-loaded) .toolbar,
+  body:not(.suite-loaded) .head-metrics{
+    display:none !important;
+  }
+  body:not(.suite-loaded) .head-top{
+    margin-bottom:0;
+  }
+
   a:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-visible{
     outline:2px solid var(--accent);
     outline-offset:2px;

@@ -270,6 +270,10 @@ function buildPinnedChip(label, targetId, onUnpin){
   return chip;
 }
 
+function updateSuiteChrome(){
+  document.body.classList.toggle('suite-loaded', suiteLoaded);
+}
+
 /* Export / Reset only make sense once test cases exist. */
 function updateActionButtons(){
   const hasData = allTests().length > 0;
@@ -279,6 +283,7 @@ function updateActionButtons(){
   document.getElementById('export-report-btn').disabled = !hasData;
   document.getElementById('reset-btn').disabled = !hasData;
   if (!hasData) closeExportMenu();
+  updateSuiteChrome();
 }
 
 const FILTER_LABELS = {
@@ -375,6 +380,7 @@ function updateFilterEmptyState(){
 
 function render(){
   updateActionButtons();
+  closeMobileNav();
   root.innerHTML = '';
   buildJumpNav();
 
@@ -679,6 +685,45 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeExportMenu();
 });
+
+/* ---------- Mobile hamburger nav ---------- */
+const headTop = document.querySelector('.head-top');
+const navToggle = document.getElementById('nav-toggle');
+const NAV_ICON_OPEN = '<line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>';
+const NAV_ICON_CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
+
+function setMobileNavOpen(open){
+  if (!headTop || !navToggle) return;
+  headTop.classList.toggle('nav-open', open);
+  navToggle.setAttribute('aria-expanded', String(open));
+  navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  const icon = navToggle.querySelector('.nav-toggle-icon');
+  if (icon) icon.innerHTML = open ? NAV_ICON_CLOSE : NAV_ICON_OPEN;
+  if (!open) closeExportMenu();
+}
+function closeMobileNav(){ setMobileNavOpen(false); }
+function toggleMobileNav(){ setMobileNavOpen(!headTop.classList.contains('nav-open')); }
+
+navToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMobileNav();
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.head-top')) closeMobileNav();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMobileNav();
+});
+// Close the mobile menu after primary actions (keep open while using Export submenu).
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  // theme.js also listens; close after toggle on small screens
+  if (window.matchMedia('(max-width:720px)').matches) closeMobileNav();
+});
+document.getElementById('import-btn').addEventListener('click', () => closeMobileNav());
+document.getElementById('reset-btn').addEventListener('click', () => closeMobileNav());
+exportPdfBtn.addEventListener('click', () => closeMobileNav());
+exportJsonBtn.addEventListener('click', () => closeMobileNav());
+exportReportBtn.addEventListener('click', () => closeMobileNav());
 
 function downloadJson(){
   const payload = {
