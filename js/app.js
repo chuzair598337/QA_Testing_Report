@@ -309,11 +309,6 @@ function render(){
       <span class="chevron-icon">${icon('chevronDown')}</span>
       <span class="module-num">${mod.num}.</span>
       <span class="module-title">${mod.title}</span>
-      <span class="module-count" data-mod-count="${mod.num}"></span>
-      <div class="mini-bar" data-mod-bar="${mod.num}">
-        <div class="progress-seg pass" style="width:0%"></div>
-        <div class="progress-seg fail" style="width:0%"></div>
-      </div>
       ${mod.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
     `;
 
@@ -322,8 +317,19 @@ function render(){
     headMeta.appendChild(buildMenuWrap('mod', mod.num, mod.pinned, mod.locked,
       () => togglePinModule(mod.num), () => toggleLockModule(mod.num)));
 
+    const headProgress = document.createElement('div');
+    headProgress.className = 'module-head-progress';
+    headProgress.innerHTML = `
+      <div class="mini-bar" data-mod-bar="${mod.num}">
+        <div class="progress-seg pass" style="width:0%"></div>
+        <div class="progress-seg fail" style="width:0%"></div>
+      </div>
+      <span class="module-count" data-mod-count="${mod.num}"></span>
+    `;
+
     head.appendChild(headLeft);
     head.appendChild(headMeta);
+    head.appendChild(headProgress);
     head.addEventListener('click', () => toggleCollapseModule(mod.num));
     modEl.appendChild(head);
 
@@ -345,11 +351,6 @@ function render(){
         <span class="chevron-icon">${icon('chevronDown')}</span>
         <span class="sub-num">${sm.num}.</span>
         <span class="sub-title-text">${sm.title}</span>
-        <span class="sub-count" data-sub-count="${sm.num}"></span>
-        <div class="mini-bar" data-sub-bar="${sm.num}">
-          <div class="progress-seg pass" style="width:0%"></div>
-          <div class="progress-seg fail" style="width:0%"></div>
-        </div>
         ${sm.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
       `;
 
@@ -358,8 +359,19 @@ function render(){
       smMeta.appendChild(buildMenuWrap('sub', sm.num, sm.pinned, sm.locked,
         () => togglePinSub(sm.num), () => toggleLockSub(sm.num)));
 
+      const smProgress = document.createElement('div');
+      smProgress.className = 'submodule-head-progress';
+      smProgress.innerHTML = `
+        <div class="mini-bar" data-sub-bar="${sm.num}">
+          <div class="progress-seg pass" style="width:0%"></div>
+          <div class="progress-seg fail" style="width:0%"></div>
+        </div>
+        <span class="sub-count" data-sub-count="${sm.num}"></span>
+      `;
+
       smTitle.appendChild(smHeadLeft);
       smTitle.appendChild(smMeta);
+      smTitle.appendChild(smProgress);
       smTitle.addEventListener('click', () => toggleCollapseSub(sm.num));
       smEl.appendChild(smTitle);
 

@@ -92,18 +92,21 @@
     scroll-margin-top: 100px;
   }
   .module-head {
-    flex-wrap: wrap;
     padding: 12px 14px;
-    gap: 8px;
+    row-gap: 8px;
   }
-  .module-meta {
-    margin-left: auto;
+  .module-head-progress,
+  .submodule-head-progress {
+    width: 100%;
+  }
+  .module-head-progress .mini-bar,
+  .submodule-head-progress .mini-bar {
+    flex: 1 1 auto;
+    max-width: none;
+    height: 8px;
   }
   .submodule {
     padding: 0 12px;
-  }
-  .submodule-title {
-    flex-wrap: wrap;
   }
   .test-controls {
     margin-left: 0;
