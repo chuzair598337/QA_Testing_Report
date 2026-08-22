@@ -516,6 +516,11 @@
     border-top:1px solid var(--border);
   }
   .module.collapsed .module-body{ display:none; }
+  /* .module clips its body's rounded corners via overflow:hidden, but that
+     also clips the absolutely-positioned Pin/Lock dropdown when the module
+     (or a sub-module inside it) is short/collapsed — let it escape while a
+     menu inside is open, and outrank the next module card while doing so. */
+  .module.menu-open{ overflow:visible; position:relative; z-index:40; }
 
   .lock-badge{ display:inline-flex; color:var(--primary); flex-shrink:0; }
 
@@ -668,24 +673,22 @@
 
   .test-main{
     display:flex;
-    align-items:flex-start;
+    align-items:center;
     gap:10px;
-    flex-wrap:wrap;
+    flex-wrap:nowrap;
   }
   .test-id{
     font-family:var(--mono);
     font-size:12.5px;
     color:var(--ink-faint);
-    padding-top:4px;
     min-width:56px;
     flex-shrink:0;
   }
   .test-text{
-    flex:1 1 260px;
+    flex:1 1 auto;
     font-size:14px;
     color:var(--ink);
-    padding-top:3px;
-    min-width:180px;
+    min-width:0;
   }
   .test-controls{
     display:flex;
@@ -699,7 +702,6 @@
     width:8px; height:8px;
     border-radius:50%;
     flex-shrink:0;
-    margin-top:6px;
   }
   .status-dot.pending{ background:var(--pending); }
   .status-dot.pass{ background:var(--pass); }

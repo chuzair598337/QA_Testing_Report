@@ -33,6 +33,19 @@ function icon(name, cls){
   return `<svg class="icon ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
 }
 
+/* Escapes user/dev-authored text (module/sub-module titles, test text) before
+   it goes into an innerHTML template — imported JSON is not guaranteed to be
+   HTML-safe (e.g. test text like "Age < 18 blocks signup" would otherwise be
+   parsed as a tag and silently dropped, or worse). */
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const root = document.getElementById('report-root');
 const jumpModuleSel = document.getElementById('jump-module');
 const jumpSubmoduleSel = document.getElementById('jump-submodule');
@@ -174,6 +187,7 @@ function toggleLockSub(subNum){
 function closeAllMenus(){
   document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
   document.querySelectorAll('[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('.module.menu-open').forEach(m => m.classList.remove('menu-open'));
   openMenuKey = null;
 }
 
@@ -225,6 +239,8 @@ function buildMenuWrap(kind, num, pinned, locked, onPin, onLock){
       menu.classList.add('open');
       btn.setAttribute('aria-expanded', 'true');
       openMenuKey = key;
+      const moduleEl = wrap.closest('.module');
+      if (moduleEl) moduleEl.classList.add('menu-open');
     }
   });
 
@@ -410,7 +426,7 @@ function render(){
     headLeft.innerHTML = `
       <span class="chevron-icon">${icon('chevronDown')}</span>
       <span class="module-num">${mod.num}.</span>
-      <span class="module-title">${mod.title}</span>
+      <span class="module-title">${escapeHtml(mod.title)}</span>
       ${mod.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
     `;
 
@@ -452,7 +468,7 @@ function render(){
       smHeadLeft.innerHTML = `
         <span class="chevron-icon">${icon('chevronDown')}</span>
         <span class="sub-num">${sm.num}.</span>
-        <span class="sub-title-text">${sm.title}</span>
+        <span class="sub-title-text">${escapeHtml(sm.title)}</span>
         ${sm.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
       `;
 
@@ -505,7 +521,7 @@ function renderTestRow(t, locked){
   main.innerHTML = `
     <span class="status-dot ${t.status}"></span>
     <span class="test-id">${t.id}.</span>
-    <span class="test-text">${t.text}</span>
+    <span class="test-text">${escapeHtml(t.text)}</span>
     <div class="test-controls">
       <span class="status-select-wrap" data-val="${t.status}">
         <select class="status-select" data-val="${t.status}" ${locked ? 'disabled' : ''}>
@@ -1100,6 +1116,16 @@ function loadSample(){
     .then(applyImport)
     .catch(() => alert('Could not load sample.json.'));
 }
+
+/* Warn before closing/reloading the tab while a suite is loaded — there is no
+   persistence layer by design (see README), so this is the only guard
+   against losing in-progress work before Export. */
+window.addEventListener('beforeunload', (e) => {
+  if (suiteLoaded){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 render();
 

@@ -152,17 +152,26 @@
   .submodule {
     padding: 0 12px;
   }
-  .test-controls {
-    margin-left: 0;
-    width: 100%;
-    justify-content: space-between;
+  .test-main {
+    flex-wrap: wrap;
+    align-items: flex-start;
   }
   .test-id {
     min-width: auto;
+    padding-top: 4px;
   }
   .test-text {
     flex: 1 1 140px;
     min-width: 0;
+    padding-top: 3px;
+  }
+  .status-dot {
+    margin-top: 6px;
+  }
+  .test-controls {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
   }
   .note-box {
     margin-left: 0;
