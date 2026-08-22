@@ -1,18 +1,22 @@
 /* ---------- Responsive ---------- */
 
-@media (max-width: 720px) {
+/* Phones + small tablets: hamburger nav only */
+@media (max-width: 900px) {
   .head-chrome .head-inner {
+    display: block;
     padding: 12px 14px 10px;
+    position: relative;
   }
   .head-metrics .head-inner {
     padding: 12px 14px 14px;
   }
   .head-top {
+    display: flex;
     flex-direction: row;
     align-items: center;
     flex-wrap: nowrap;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 0;
   }
   .head-title-block {
     flex: 1 1 auto;
@@ -28,27 +32,29 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .nav-toggle {
-    display: inline-flex;
+
+  /* Show hamburger, hide action row until opened */
+  .head-chrome .nav-toggle {
+    display: inline-flex !important;
   }
-  .head-actions {
-    display: none;
+  .head-chrome .head-actions {
+    display: none !important;
     position: absolute;
-    top: calc(100% + 8px);
+    top: calc(100% - 2px);
     left: 0;
     right: 0;
-    z-index: 70;
+    z-index: 80;
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-    padding: 12px;
+    margin: 0;
+    padding: 12px 14px 14px;
     background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: 10px;
-    box-shadow: var(--shadow);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 10px 24px rgba(21, 34, 56, 0.14);
   }
-  .head-top.nav-open .head-actions {
-    display: flex;
+  .head-chrome .head-actions.is-open {
+    display: flex !important;
   }
   .head-actions .btn {
     width: 100%;
@@ -58,7 +64,7 @@
     min-height: 44px;
   }
   .head-actions .btn .btn-label {
-    display: inline;
+    display: inline !important;
   }
   .export-wrap {
     width: 100%;
@@ -66,7 +72,7 @@
   .export-wrap > .btn {
     width: 100%;
   }
-  .export-menu {
+  .head-chrome .export-menu {
     position: static;
     display: none;
     width: 100%;
@@ -74,9 +80,10 @@
     box-shadow: none;
     border-color: var(--border);
   }
-  .export-menu.open {
+  .head-chrome .export-menu.open {
     display: block;
   }
+
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
@@ -175,6 +182,10 @@
   }
   .head-metrics .head-inner {
     padding: 10px 12px 12px;
+  }
+  .head-chrome .head-actions {
+    padding-left: 12px;
+    padding-right: 12px;
   }
   .nav-toggle {
     width: 40px;

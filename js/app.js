@@ -687,14 +687,16 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ---------- Mobile hamburger nav ---------- */
-const headTop = document.querySelector('.head-top');
+const headChrome = document.querySelector('.head-chrome');
+const headActions = document.getElementById('head-actions');
 const navToggle = document.getElementById('nav-toggle');
 const NAV_ICON_OPEN = '<line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>';
 const NAV_ICON_CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
 
 function setMobileNavOpen(open){
-  if (!headTop || !navToggle) return;
-  headTop.classList.toggle('nav-open', open);
+  if (!headActions || !navToggle) return;
+  headActions.classList.toggle('is-open', open);
+  if (headChrome) headChrome.classList.toggle('nav-open', open);
   navToggle.setAttribute('aria-expanded', String(open));
   navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
   const icon = navToggle.querySelector('.nav-toggle-icon');
@@ -702,22 +704,20 @@ function setMobileNavOpen(open){
   if (!open) closeExportMenu();
 }
 function closeMobileNav(){ setMobileNavOpen(false); }
-function toggleMobileNav(){ setMobileNavOpen(!headTop.classList.contains('nav-open')); }
+function toggleMobileNav(){ setMobileNavOpen(!headActions.classList.contains('is-open')); }
 
 navToggle.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleMobileNav();
 });
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.head-top')) closeMobileNav();
+  if (!e.target.closest('.head-chrome')) closeMobileNav();
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeMobileNav();
 });
-// Close the mobile menu after primary actions (keep open while using Export submenu).
 document.getElementById('theme-toggle').addEventListener('click', () => {
-  // theme.js also listens; close after toggle on small screens
-  if (window.matchMedia('(max-width:720px)').matches) closeMobileNav();
+  if (window.matchMedia('(max-width:900px)').matches) closeMobileNav();
 });
 document.getElementById('import-btn').addEventListener('click', () => closeMobileNav());
 document.getElementById('reset-btn').addEventListener('click', () => closeMobileNav());
