@@ -820,7 +820,6 @@ exportReportBtn.addEventListener('click', (e) => {
 /* ---------- Generate report modal (passed + failed with notes) ---------- */
 const reportModal = document.getElementById('report-modal');
 const reportModalBody = document.getElementById('report-modal-body');
-const reportModalSub = document.getElementById('report-modal-sub');
 const reportCopyBtn = document.getElementById('report-copy-btn');
 const reportCopyLabel = document.getElementById('report-copy-label');
 const reportDownloadBtn = document.getElementById('report-download-btn');
@@ -859,14 +858,27 @@ function collectReportCases(){
   return { sections, passed, failed, total: passed + failed };
 }
 
+/* Escapes Teams' typed-markdown emphasis/code markers inside dev/QA-authored
+   text (titles, test text, notes) so a stray "*", "_", "~", or "`" in a test
+   case doesn't accidentally toggle bold/italic/strikethrough/code once pasted
+   into a Teams chat. Structural markers (#, >, list numbers) aren't escaped
+   here since this text is always inserted mid-line, never at line start. */
+function escapeTeamsMarkdown(str){
+  return String(str).replace(/([*_~`\\])/g, '\\$1');
+}
+
+/* Builds the report as Microsoft Teams' subset markdown (typed-markdown that
+   converts live in the compose box / renders on paste) — see README for the
+   supported-syntax reference. Modules and sub-modules are headings (## / ###)
+   under the doc title (#); no pipe-style tables, since Teams chat doesn't
+   render those. This is what Copy to clipboard and Download both use. */
 function buildReportMarkdown(data){
   const generatedAt = new Date().toLocaleString();
   const lines = [];
-  lines.push(`QA Test Report`);
-  lines.push(`${docTitle}`);
+  lines.push(`# ${escapeTeamsMarkdown(docTitle)}`);
   lines.push('');
-  lines.push(`Generated: ${generatedAt}`);
-  lines.push(`Summary: ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)`);
+  lines.push(`**Generated:** ${generatedAt}`);
+  lines.push(`**Summary:** ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)`);
   lines.push('');
 
   if (!data.total){
@@ -875,17 +887,18 @@ function buildReportMarkdown(data){
   }
 
   data.sections.forEach(mod => {
-    lines.push(`${mod.num}. ${mod.title}`);
+    lines.push(`## ${mod.num}. ${escapeTeamsMarkdown(mod.title)}`);
     lines.push('');
     mod.subModules.forEach(sm => {
-      lines.push(`  ${sm.num} ${sm.title}`);
+      lines.push(`### ${sm.num} ${escapeTeamsMarkdown(sm.title)}`);
       lines.push('');
       sm.cases.forEach((t, idx) => {
         const status = t.status === 'pass' ? 'Passed' : 'Failed';
-        lines.push(`    ${idx + 1}. [${status}] ${t.id} — ${t.text}`);
+        lines.push(`${idx + 1}. **[${status}]** ${t.id} — ${escapeTeamsMarkdown(t.text)}`);
         if (t.note && t.note.trim()){
           t.note.trim().split(/\n/).forEach((noteLine, ni) => {
-            lines.push(ni === 0 ? `       - Note: ${noteLine}` : `         ${noteLine}`);
+            const text = escapeTeamsMarkdown(noteLine);
+            lines.push(ni === 0 ? `> Note: ${text}` : `> ${text}`);
           });
         }
       });
@@ -905,17 +918,17 @@ function buildReportHtml(data){
   let html = `<article class="report-doc">
     <header class="report-doc-header">
       <p class="report-doc-kicker">QA Test Report</p>
-      <h3 class="report-doc-title">${escapeHtml(docTitle)}</h3>
+      <h1 class="report-doc-title">${escapeHtml(docTitle)}</h1>
       <p class="report-doc-meta">Generated: ${escapeHtml(generatedAt)}</p>
       <p class="report-doc-meta">Summary: ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)</p>
     </header>`;
 
   data.sections.forEach(mod => {
     html += `<section class="report-module">
-      <h4 class="report-module-title">${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h4>`;
+      <h2 class="report-module-title">${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h2>`;
     mod.subModules.forEach(sm => {
       html += `<div class="report-submodule">
-        <h5 class="report-submodule-title">${escapeHtml(sm.num)} ${escapeHtml(sm.title)}</h5>
+        <h3 class="report-submodule-title">${escapeHtml(sm.num)} ${escapeHtml(sm.title)}</h3>
         <ol class="report-case-list">`;
       sm.cases.forEach(t => {
         const statusLabel = t.status === 'pass' ? 'Passed' : 'Failed';
@@ -938,9 +951,6 @@ function openReportModal(){
   const data = collectReportCases();
   latestReportMarkdown = buildReportMarkdown(data);
   reportModalBody.innerHTML = buildReportHtml(data);
-  reportModalSub.textContent = data.total
-    ? `${data.passed} passed · ${data.failed} failed · pending omitted`
-    : 'No passed or failed cases yet';
   reportCopyLabel.textContent = 'Copy to clipboard';
   reportCopyBtn.disabled = !data.total;
   reportDownloadBtn.disabled = !data.total;
