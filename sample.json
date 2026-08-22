@@ -1,0 +1,92 @@
+{
+  "docTitle": "Sample — Onboarding Test Suite",
+  "modules": [
+    {
+      "title": "Onboarding — Freelancer",
+      "subModules": [
+        {
+          "title": "00–01 · Account Creation & Email Verification",
+          "tests": [
+            { "text": "Sign-up form validates required fields and email format", "status": "pending", "note": "" },
+            { "text": "Password strength rules enforced with inline feedback", "status": "pending", "note": "" },
+            { "text": "Verification email delivered and deep link opens app correctly", "status": "pending", "note": "" },
+            { "text": "Duplicate email shows correct error state", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "02–03 · Business Profile Setup",
+          "tests": [
+            { "text": "Role selection persists and drives subsequent screens", "status": "pending", "note": "" },
+            { "text": "Profile fields save correctly and reload on relaunch", "status": "pending", "note": "" },
+            { "text": "Skip/back navigation does not lose entered data", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "04 · Multi-Factor Authentication",
+          "tests": [
+            { "text": "TOTP code entry accepts valid code and rejects invalid code", "status": "pending", "note": "" },
+            { "text": "Resend code flow respects cooldown timer", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "05–06 · Bank Connection",
+          "tests": [
+            { "text": "OAuth redirect returns to app correctly", "status": "pending", "note": "" },
+            { "text": "Linked account appears in account list post-connection", "status": "pending", "note": "" },
+            { "text": "Cancel mid-flow returns user to prior screen without crash", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "07–08 · Subscription Selection",
+          "tests": [
+            { "text": "Plan comparison renders correct pricing and feature lists", "status": "pending", "note": "" },
+            { "text": "Selecting a plan carries through to payment step", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "09 · Completion",
+          "tests": [
+            { "text": "Completion screen confirms setup and routes to dashboard", "status": "pending", "note": "" },
+            { "text": "Dashboard reflects onboarding-selected preferences", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Onboarding — Small Business Owner",
+      "subModules": [
+        {
+          "title": "Role-specific fields",
+          "tests": [
+            { "text": "Company size and industry fields required and validated", "status": "pending", "note": "" },
+            { "text": "Team invite step optional and skippable", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Onboarding — Bookkeeper",
+      "subModules": [
+        {
+          "title": "Role-specific fields",
+          "tests": [
+            { "text": "Client-linking step displays correct empty state", "status": "pending", "note": "" },
+            { "text": "Certification/license field optional, not blocking", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Onboarding — Medium Size Firm",
+      "subModules": [
+        {
+          "title": "Role-specific fields",
+          "tests": [
+            { "text": "Multi-user seat selection reflects pricing tier", "status": "pending", "note": "" },
+            { "text": "Admin role assignment step validates at least one admin", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    }
+  ]
+}
