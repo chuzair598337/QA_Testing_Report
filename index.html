@@ -91,11 +91,10 @@
       </div>
 
       <div class="progress-wrap">
-        <div class="progress-track">
-          <div class="progress-seg pass" id="bar-pass" style="width:0%"></div>
-          <div class="progress-seg fail" id="bar-fail" style="width:0%"></div>
+        <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Testing progress">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+          <span class="progress-label" id="progress-label">0% completed</span>
         </div>
-        <div class="progress-caption" id="progress-caption">0 / 0 tested</div>
       </div>
 
       <div class="pinned-bar" id="pinned-bar" style="display:none;">

@@ -451,9 +451,15 @@ function updateStats(){
   document.getElementById('stat-failed').textContent = failed;
   document.getElementById('stat-percent').textContent = pct + '%';
 
-  document.getElementById('bar-pass').style.width = (total ? (passed/total*100) : 0) + '%';
-  document.getElementById('bar-fail').style.width = (total ? (failed/total*100) : 0) + '%';
-  document.getElementById('progress-caption').textContent = `${tested} / ${total} tested · ${passed} pass · ${failed} fail`;
+  const fillEl = document.getElementById('progress-fill');
+  const labelEl = document.getElementById('progress-label');
+  const trackEl = document.getElementById('progress-track');
+  fillEl.style.width = pct + '%';
+  labelEl.textContent = pct + '% completed';
+  trackEl.setAttribute('aria-valuenow', String(pct));
+  // Label sits centered; once the fill covers most of the bar, switch to
+  // high-contrast text so it stays readable on the primary/accent fill.
+  trackEl.dataset.contrast = pct >= 42 ? 'on-fill' : 'on-track';
 
   // per-module and per-sub-module mini stats
   modules.forEach(mod => {

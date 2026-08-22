@@ -211,30 +211,50 @@
   .stat-tile.failed .stat-value{ color:var(--fail); }
   .stat-tile.percent .stat-value{ color:var(--primary); }
 
-  /* Progress bar */
+  /* Progress bar — fill + in-bar "% completed" label (KPI cards cover counts) */
   .progress-wrap{
-    display:flex;
-    align-items:center;
-    gap:12px;
+    display:block;
   }
   .progress-track{
-    flex:1;
-    height:10px;
+    position:relative;
+    width:100%;
+    height:28px;
     border-radius:999px;
     background:var(--pending-bg);
     overflow:hidden;
-    display:flex;
     border:1px solid var(--border);
   }
-  .progress-seg.pass{ background:var(--pass); height:100%; transition:width .25s ease; }
-  .progress-seg.fail{ background:var(--fail); height:100%; transition:width .25s ease; }
-  .progress-caption{
+  .progress-fill{
+    position:absolute;
+    inset:0 auto 0 0;
+    width:0%;
+    background:linear-gradient(90deg, var(--primary), var(--accent));
+    transition:width .25s ease;
+  }
+  .progress-label{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:1;
     font-family:var(--mono);
     font-size:12px;
     font-weight:700;
+    letter-spacing:.02em;
     color:var(--ink);
-    white-space:nowrap;
+    pointer-events:none;
+    transition:color .15s ease;
   }
+  .progress-track[data-contrast="on-fill"] .progress-label{
+    color:#fff;
+  }
+  html[data-theme="dark"] .progress-track[data-contrast="on-fill"] .progress-label{
+    color:#0F1520;
+  }
+  /* Mini bars inside module / sub-module headers (pass + fail segments) */
+  .progress-seg.pass{ background:var(--pass); height:100%; transition:width .25s ease; }
+  .progress-seg.fail{ background:var(--fail); height:100%; transition:width .25s ease; }
 
   /* Filter + jump nav */
   .toolbar{
