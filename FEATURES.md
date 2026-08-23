@@ -13,11 +13,15 @@ change alters existing behavior, edit the bullet in place rather than
 appending a changelog entry; this file describes current behavior, not
 history (git log is the history).
 
-**Coming Soon Features** (last section, below) is the backlog — proposed
+**Coming Soon Features** (second-to-last section) is the backlog — proposed
 features not built yet. When one gets implemented: move its bullet out of
 Coming Soon and into the section above it belongs to (rewritten as shipped
 behavior, not a proposal), and delete it from Coming Soon. Nothing lives in
 both places at once.
+
+**Not Required** (last section) is for features considered and explicitly
+declined — kept for reference so they don't get re-proposed, not expected to
+graduate the way Coming Soon bullets are.
 
 ## Core workflow
 
@@ -147,12 +151,27 @@ bullet graduates out of this section once it ships.
 - **Tab-title progress indicator** — the browser tab title reflects live
   pass/fail counts (e.g. `3 failed · QA Testing Report`), so progress is
   visible from a background tab without switching back.
-- **Native print stylesheet** — a `@media print` fallback for Download PDF
-  that doesn't depend on `html2pdf.js` loading successfully from its CDN.
-- **Per-test attachments** — attach or link an image/screenshot to a test's
-  note, not just free text.
+- **Duplicate-file / merge-progress path** — a second Import mode that loads
+  a base/revised suite and merges in status/notes from a previously
+  exported results file, matched by module+sub-module+test-text (not
+  position, since array order can change) rather than replacing everything.
+- **Undo for Reset all** — single-level undo (one Reset back) via a toast
+  with an Undo action, not a full undo/redo stack.
 - **Changed-since-last-import diff** — when a revised suite is imported over
   an existing one, highlight which modules/sub-modules/tests are new or
   changed instead of a silent full replace.
 - **Per-test/module owner field** — an optional assignee so a suite split
   across multiple QA testers can show who owns what.
+
+## Not Required
+
+Considered and explicitly declined, kept here so they don't get
+re-proposed. Unlike Coming Soon, nothing here is expected to graduate —
+move a bullet out only if a real need for it actually shows up later.
+
+- **Per-test screenshot/attachment** — attaching or linking an
+  image/screenshot to a test's note, beyond the existing free-text note
+  field. Decided not needed.
+- **Native print stylesheet independent of `html2pdf.js`** — a `@media
+  print` fallback for Download PDF that doesn't depend on `html2pdf.js`
+  loading from its CDN. Printing isn't a required capability for this app.
