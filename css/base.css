@@ -969,14 +969,60 @@
     color:var(--ink-soft);
     font-family:var(--mono);
   }
-  .report-modal-close{
+  .report-modal-actions{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    flex-shrink:0;
+  }
+  .report-modal-action-btn{
     width:36px;
     height:36px;
     border:1px solid var(--border-strong);
     border-radius:8px;
     color:var(--ink-soft);
   }
-  .report-modal-close:hover{ background:var(--hover-bg); color:var(--ink); }
+  .report-modal-action-btn:hover{ background:var(--hover-bg); color:var(--ink); }
+  .report-modal-action-btn[aria-expanded="true"]{
+    background:var(--primary-soft);
+    border-color:var(--primary);
+    color:var(--primary);
+  }
+  .report-settings-wrap{ position:relative; flex-shrink:0; }
+  .report-settings-panel{
+    left:auto;
+    right:0;
+    min-width:220px;
+    max-width:min(280px, calc(100vw - 32px));
+    padding:12px;
+  }
+  .report-settings-title{
+    margin:0 0 8px;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  .report-settings-check{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:7px 6px;
+    border-radius:6px;
+    font-family:var(--sans);
+    font-size:13px;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .report-settings-check:hover{ background:var(--hover-bg); }
+  .report-settings-check input[type="checkbox"]{
+    width:16px;
+    height:16px;
+    accent-color:var(--primary);
+    cursor:pointer;
+    flex-shrink:0;
+  }
   .report-modal-body{
     flex:1 1 auto;
     overflow:auto;

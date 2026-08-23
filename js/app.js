@@ -27,7 +27,8 @@ const ICON_PATHS = {
   upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
   inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-  fileJson: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/>'
+  fileJson: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'
 };
 function icon(name, cls){
   return `<svg class="icon ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
@@ -884,8 +885,31 @@ function escapeHtml(str){
     .replace(/"/g, '&quot;');
 }
 
-function collectReportCases(){
-  // Preserve JSON order: module → sub-module → tests; only pass/fail.
+/* Which "Included test cases" checkboxes are on — set from the report
+   settings panel (cog button in the report modal header). "all" and the
+   three specific filters are mutually exclusive as a group: checking "all"
+   clears the other three and vice versa (see the checkbox wiring below).
+   Kept as in-memory session state, same as filters/pinned/locked elsewhere
+   in the app — persists across repeat "Generate report" opens, not across
+   page reloads. */
+let reportSettings = { all: true, passed: false, passedWithNote: false, failedOnly: false };
+
+function testMatchesReportSettings(t, settings){
+  const s = settings || reportSettings;
+  if (t.status !== 'pass' && t.status !== 'fail') return false; // pending never included
+  if (s.all) return true;
+  if (!s.passed && !s.passedWithNote && !s.failedOnly) return true; // nothing checked — same as "all"
+
+  const hasNote = !!(t.note && t.note.trim());
+  if (s.passed && t.status === 'pass' && !hasNote) return true;
+  if (s.passedWithNote && t.status === 'pass' && hasNote) return true;
+  if (s.failedOnly && t.status === 'fail') return true;
+  return false;
+}
+
+function collectReportCases(settings){
+  // Preserve JSON order: module → sub-module → tests; filtered by the
+  // Included Test Cases report setting (defaults to all pass/fail cases).
   const sections = [];
   let passed = 0;
   let failed = 0;
@@ -893,7 +917,7 @@ function collectReportCases(){
   modules.forEach(mod => {
     const subSections = [];
     mod.subModules.forEach(sm => {
-      const cases = sm.tests.filter(t => t.status === 'pass' || t.status === 'fail');
+      const cases = sm.tests.filter(t => testMatchesReportSettings(t, settings));
       if (!cases.length) return;
       cases.forEach(t => {
         if (t.status === 'pass') passed += 1;
@@ -1094,21 +1118,35 @@ function buildReportHtml(data){
   return html;
 }
 
-function openReportModal(){
+/* Recomputes the filtered case list from the current reportSettings and
+   rebuilds everything the modal shows/exports from it — called on open and
+   again every time a report-setting checkbox changes, without re-checking
+   the "does the suite have anything at all" gate below (the modal is
+   already open at that point). */
+function refreshReportModal(){
   const data = collectReportCases();
-  
-  if (data.total === 0){
-    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.');
-    return;
-  }
-  
   latestReportMarkdown = buildReportMarkdown(data);
   latestReportPlainText = buildReportPlainText(data);
   latestReportClipboardHtml = buildReportClipboardHtml(data);
   reportModalBody.innerHTML = buildReportHtml(data);
   reportCopyLabel.textContent = 'Copy to clipboard';
-  reportCopyBtn.disabled = false;
-  reportDownloadBtn.disabled = false;
+  reportCopyBtn.disabled = !data.total;
+  reportDownloadBtn.disabled = !data.total;
+}
+
+function openReportModal(){
+  // Gate on the suite as a whole, ignoring the remembered report-setting
+  // filter — "nothing to report" should mean the suite truly has no
+  // passed/failed cases, not just none matching a leftover filter (that
+  // case opens the modal and shows its own "no cases match" message with
+  // the settings panel right there to fix it).
+  const anyCases = collectReportCases({ all: true, passed: false, passedWithNote: false, failedOnly: false });
+  if (anyCases.total === 0){
+    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.');
+    return;
+  }
+
+  refreshReportModal();
   reportModal.classList.add('open');
   reportModal.setAttribute('aria-hidden', 'false');
   document.getElementById('report-modal-close').focus();
@@ -1126,6 +1164,59 @@ reportModal.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && reportModal.classList.contains('open')) closeReportModal();
 });
+
+/* ---------- Report settings (cog button — Included Test Cases filter) ---------- */
+const reportSettingsBtn = document.getElementById('report-settings-btn');
+const reportSettingsPanel = document.getElementById('report-settings-panel');
+const reportSettingAll = document.getElementById('report-setting-all');
+const reportSettingPassed = document.getElementById('report-setting-passed');
+const reportSettingPassedNote = document.getElementById('report-setting-passed-note');
+const reportSettingFailed = document.getElementById('report-setting-failed');
+
+reportSettingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = reportSettingsPanel.classList.contains('open');
+  closeAllMenus();
+  if (!isOpen){
+    reportSettingsPanel.classList.add('open');
+    reportSettingsBtn.setAttribute('aria-expanded', 'true');
+  }
+});
+
+// "All" and the three specific filters are one mutually-exclusive group:
+// checking "all" clears the other three; checking any of the other three
+// clears "all"; unchecking the last-checked specific filter falls back to
+// "all" rather than leaving nothing selected (checkboxes stay in sync with
+// reportSettings either way). The panel deliberately does NOT close on
+// checkbox change — unlike the Pin/Lock dropdown items — so multiple boxes
+// can be checked in one go; it closes via the cog button, outside click, or
+// Escape (the existing menu-wrap/closeAllMenus machinery, reused as-is).
+function syncReportSettingCheckboxes(){
+  reportSettingAll.checked = reportSettings.all;
+  reportSettingPassed.checked = reportSettings.passed;
+  reportSettingPassedNote.checked = reportSettings.passedWithNote;
+  reportSettingFailed.checked = reportSettings.failedOnly;
+}
+
+reportSettingAll.addEventListener('change', () => {
+  reportSettings = { all: true, passed: false, passedWithNote: false, failedOnly: false };
+  syncReportSettingCheckboxes();
+  refreshReportModal();
+});
+
+function onSpecificReportSettingChange(key, checkbox){
+  reportSettings.all = false;
+  reportSettings[key] = checkbox.checked;
+  if (!reportSettings.passed && !reportSettings.passedWithNote && !reportSettings.failedOnly){
+    reportSettings = { all: true, passed: false, passedWithNote: false, failedOnly: false };
+  }
+  syncReportSettingCheckboxes();
+  refreshReportModal();
+}
+
+reportSettingPassed.addEventListener('change', () => onSpecificReportSettingChange('passed', reportSettingPassed));
+reportSettingPassedNote.addEventListener('change', () => onSpecificReportSettingChange('passedWithNote', reportSettingPassedNote));
+reportSettingFailed.addEventListener('change', () => onSpecificReportSettingChange('failedOnly', reportSettingFailed));
 
 function markCopied(){
   reportCopyLabel.textContent = 'Copied!';
