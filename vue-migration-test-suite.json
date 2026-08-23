@@ -127,20 +127,20 @@
         {
           "title": "Tree UX",
           "tests": [
-            { "text": "Collapse/expand a module and a sub-module", "status": "pending", "note": "" },
-            { "text": "Pin a module/sub-module, confirm it shows in the pinned bar", "status": "pending", "note": "" },
-            { "text": "Lock a module/sub-module, confirm its rows can't be collapsed/edited", "status": "pending", "note": "" },
-            { "text": "Filters (status + live search) narrow the tree correctly", "status": "pending", "note": "" },
-            { "text": "Jump-nav scrolls to the target module/sub-module and expands it", "status": "pending", "note": "" },
-            { "text": "Scroll-collapse chrome hides/shows the metrics block while scrolling", "status": "pending", "note": "" }
+            { "text": "Collapse/expand a module and a sub-module", "status": "pass", "note": "" },
+            { "text": "Pin a module/sub-module, confirm it shows in the pinned bar", "status": "pass", "note": "Was failing: missing suite-loaded body class hid the whole metrics chrome. Fixed and re-verified live." },
+            { "text": "Lock a module/sub-module, confirm its rows can't be collapsed/edited", "status": "pass", "note": "" },
+            { "text": "Filters (status + live search) narrow the tree correctly", "status": "pass", "note": "Was failing: same suite-loaded root cause as pin. Fixed and re-verified live." },
+            { "text": "Jump-nav scrolls to the target module/sub-module and expands it", "status": "pass", "note": "Was failing: same suite-loaded root cause. Fixed and re-verified live." },
+            { "text": "Scroll-collapse chrome hides/shows the metrics block while scrolling", "status": "pass", "note": "Was failing: same suite-loaded root cause. Fixed and re-verified live (both directions)." }
           ]
         },
         {
           "title": "Export",
           "tests": [
-            { "text": "Download PDF produces a correct-looking export", "status": "pending", "note": "" },
-            { "text": "Download JSON produces a valid, re-importable file", "status": "pending", "note": "" },
-            { "text": "Generate report modal — settings, preview, copy, and download all work", "status": "pending", "note": "" }
+            { "text": "Download PDF produces a correct-looking export", "status": "pass", "note": "Was failing: html2canvas garbled native <select> text and rendered the row gradient as a smudge. Swapped to a plain-text status pill + flat color during capture only; re-downloaded and confirmed clean." },
+            { "text": "Download JSON produces a valid, re-importable file", "status": "pass", "note": "" },
+            { "text": "Generate report modal — settings, preview, copy, and download all work", "status": "pass", "note": "No bug found: the downloaded .md was already correct, pure markdown, matching the legacy format exactly. The 'not pure' report was the same file quoted in the bug report itself (self-referential test data)." }
           ]
         },
         {
