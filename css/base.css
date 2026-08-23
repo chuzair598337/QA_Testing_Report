@@ -228,9 +228,12 @@
     padding:10px 12px;
     cursor:pointer;
     transition:all 0.2s ease;
-    text-align:left;
+    text-align:center;
     width:100%;
-    display:block;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
   }
   .stat-tile:hover{
     background:var(--hover-bg);
