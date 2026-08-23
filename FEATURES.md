@@ -13,6 +13,12 @@ change alters existing behavior, edit the bullet in place rather than
 appending a changelog entry; this file describes current behavior, not
 history (git log is the history).
 
+**Coming Soon Features** (last section, below) is the backlog — proposed
+features not built yet. When one gets implemented: move its bullet out of
+Coming Soon and into the section above it belongs to (rewritten as shipped
+behavior, not a proposal), and delete it from Coming Soon. Nothing lives in
+both places at once.
+
 ## Core workflow
 
 - **Import** — loads a test-case JSON file (schema in README) into an
@@ -108,3 +114,43 @@ history (git log is the history).
   break rendering or inject markup.
 - **No external dependency** beyond `html2pdf.js` (loaded from cdnjs, used
   only by Download PDF) — everything else is this repo's own HTML/CSS/JS.
+
+## Coming Soon Features
+
+Proposed, not yet built. See the note at the top of this file for how a
+bullet graduates out of this section once it ships.
+
+- **Search box** — type to filter test cases by matching text across the
+  whole suite, not just jump to a module/sub-module by picking from a
+  dropdown.
+- **Bulk actions** — mark every test in a module/sub-module (or a
+  multi-selection) Pass/Fail/Pending in one action, instead of one row at a
+  time.
+- **Keyboard shortcuts** — advance to the next pending test and mark it
+  Pass/Fail without leaving the keyboard, for faster work on large suites.
+- **Modal focus return** — closing the confirm or report modal returns
+  keyboard focus to whatever button opened it, instead of dropping it.
+- **Tab-title progress indicator** — the browser tab title reflects live
+  pass/fail counts (e.g. `3 failed · QA Testing Report`), so progress is
+  visible from a background tab without switching back.
+- **Native print stylesheet** — a `@media print` fallback for Download PDF
+  that doesn't depend on `html2pdf.js` loading successfully from its CDN.
+- **Per-test attachments** — attach or link an image/screenshot to a test's
+  note, not just free text.
+- **Changed-since-last-import diff** — when a revised suite is imported over
+  an existing one, highlight which modules/sub-modules/tests are new or
+  changed instead of a silent full replace.
+- **Per-test/module owner field** — an optional assignee so a suite split
+  across multiple QA testers can show who owns what.
+- **Mobile stacking fix for the import-replace modal's action row** — the
+  Export dropdown + "Discard Changes" button need a stacked, full-width
+  layout below ~480px instead of squeezing side by side.
+- **Extra responsive breakpoint (~600–760px)** — a middle tier between the
+  current `900px`/`480px` breakpoints so small tablets and split-screen
+  views don't inherit the full mobile layout untuned.
+- **Collapsible sticky header on scroll** — the KPI/progress/jump-nav block
+  hides on scroll-down and reappears on scroll-up, to give small-height
+  (landscape mobile) screens more room for the actual test list.
+- **Stronger locked-state indicator** — a more visible cue than the current
+  badge + reduced opacity, so a locked test/module isn't easy to miss in a
+  long list at a glance.
