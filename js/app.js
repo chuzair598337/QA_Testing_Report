@@ -258,9 +258,15 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeAllMenus();
 });
 
-/* Builds the ellipsis-vertical "more options" button + its Pin/Lock dropdown,
-   shared by module headers and sub-module headers. */
-function buildMenuWrap(kind, num, pinned, locked, onPin, onLock){
+/* Builds the ellipsis-vertical "more options" button + its Pin/Lock/bulk-mark
+   dropdown, shared by module headers and sub-module headers.
+   bulk = { locked, label, tests } — locked: whether status-editing is
+   blocked here (own lock, or a parent module's for a sub-module — same
+   rule renderTestRow() already applies to individual rows); label: the
+   module/sub-module title, used in the bulk-mark confirm dialog; tests:
+   the flat test array the bulk actions apply to (a sub-module's own, or
+   every test across a module's sub-modules). */
+function buildMenuWrap(kind, num, pinned, locked, onPin, onLock, bulk){
   const key = `${kind}-${num}`;
   const wrap = document.createElement('div');
   wrap.className = 'menu-wrap';
@@ -290,6 +296,33 @@ function buildMenuWrap(kind, num, pinned, locked, onPin, onLock){
 
   menu.appendChild(pinItem);
   menu.appendChild(lockItem);
+
+  const divider = document.createElement('div');
+  divider.className = 'dropdown-divider';
+  menu.appendChild(divider);
+
+  // Disabled when status-editing is blocked here (locked) or there's
+  // nothing to mark (empty scope) — mirrors the disabled state individual
+  // status <select>s already get under the same conditions.
+  const bulkDisabled = bulk.locked || bulk.tests.length === 0;
+  [
+    { status: 'pass', label: 'Mark all Pass' },
+    { status: 'fail', label: 'Mark all Fail' },
+    { status: 'pending', label: 'Mark all Pending' }
+  ].forEach(({ status, label }) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'dropdown-item';
+    item.disabled = bulkDisabled;
+    item.innerHTML = `<span class="status-dot ${status}"></span><span>${label}</span>`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (bulkDisabled) return;
+      closeAllMenus();
+      bulkMarkTests(bulk.tests, status, bulk.label);
+    });
+    menu.appendChild(item);
+  });
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -368,6 +401,44 @@ const FILTER_LABELS = {
   pass: 'Passed',
   fail: 'Failed'
 };
+
+// Distinct from FILTER_LABELS above (singular/imperative form, for bulk
+// mark actions and their confirm-dialog copy — "Mark all Pass", not
+// "Passed").
+const STATUS_LABELS = {
+  pass: 'Pass',
+  fail: 'Fail',
+  pending: 'Pending'
+};
+
+/* Sets `targetStatus` on every test in `tests` (a module's or sub-module's
+   full test list). Prompts for confirmation first only when doing so would
+   actually overwrite existing Pass/Fail results — marking still-Pending
+   tests, or re-marking tests already at the target status, is purely
+   additive and doesn't need one. `scopeLabel` (a module/sub-module title)
+   goes straight into confirmModalOpen()'s message, which sets it via
+   textContent, so no HTML-escaping is needed here. */
+function bulkMarkTests(tests, targetStatus, scopeLabel){
+  const overwriteCount = tests.filter(t => t.status !== 'pending' && t.status !== targetStatus).length;
+
+  const apply = () => {
+    tests.forEach(t => { t.status = targetStatus; });
+    dirty = true;
+    render();
+  };
+
+  if (overwriteCount === 0){
+    apply();
+    return;
+  }
+
+  const statusLabel = STATUS_LABELS[targetStatus];
+  confirmModalOpen(
+    `Mark all as ${statusLabel}?`,
+    `This overwrites ${overwriteCount} already-marked test${overwriteCount === 1 ? '' : 's'} in "${scopeLabel}" to ${statusLabel}. This can't be undone.`,
+    apply
+  );
+}
 
 function buildEmptyState({ variant, iconName, title, hint, actionsHtml }){
   return `
@@ -512,7 +583,8 @@ function render(){
     const headMeta = document.createElement('div');
     headMeta.className = 'module-meta';
     headMeta.appendChild(buildMenuWrap('mod', mod.num, mod.pinned, mod.locked,
-      () => togglePinModule(mod.num), () => toggleLockModule(mod.num)));
+      () => togglePinModule(mod.num), () => toggleLockModule(mod.num),
+      { locked: mod.locked, label: mod.title, tests: mod.subModules.flatMap(sm => sm.tests) }));
 
     const headProgress = document.createElement('div');
     headProgress.className = 'module-head-progress';
@@ -554,7 +626,8 @@ function render(){
       const smMeta = document.createElement('div');
       smMeta.className = 'submodule-meta';
       smMeta.appendChild(buildMenuWrap('sub', sm.num, sm.pinned, sm.locked,
-        () => togglePinSub(sm.num), () => toggleLockSub(sm.num)));
+        () => togglePinSub(sm.num), () => toggleLockSub(sm.num),
+        { locked: mod.locked || sm.locked, label: sm.title, tests: sm.tests }));
 
       const smProgress = document.createElement('div');
       smProgress.className = 'submodule-head-progress';

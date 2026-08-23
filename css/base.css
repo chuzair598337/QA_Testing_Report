@@ -684,7 +684,7 @@
     position:absolute;
     top:calc(100% + 4px);
     right:0;
-    min-width:150px;
+    min-width:180px;
     background:var(--surface);
     border:1px solid var(--border-strong);
     border-radius:8px;
@@ -692,6 +692,13 @@
     padding:4px;
     display:none;
     z-index:30;
+  }
+  /* Separates Pin/Lock from the bulk-mark items below them in the
+     module/sub-module "more options" menu. */
+  .dropdown-divider{
+    height:1px;
+    background:var(--border);
+    margin:4px 6px;
   }
   .dropdown-menu.open{ display:block; }
   .dropdown-item{
@@ -712,6 +719,15 @@
   }
   .dropdown-item:hover{ background:var(--hover-bg); }
   .dropdown-item .icon{ color:var(--ink-soft); }
+  /* Bulk-mark items (and any other dropdown-item) disabled while locked or
+     with nothing in scope to mark — distinct cursor/opacity from the
+     export-menu's own [disabled] rule below, which means something else
+     (a PDF actively generating), not "unavailable". */
+  .dropdown-item:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+  }
+  .dropdown-item:disabled:hover{ background:none; }
   .export-wrap{ position:relative; flex-shrink:0; }
   .export-menu{
     min-width:168px;

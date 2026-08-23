@@ -66,6 +66,14 @@ graduate the way Coming Soon bullets are.
   dim, so it stays unambiguous in a printed/exported report.
 - **Jump navigation** — dropdowns to jump straight to a module or
   sub-module, auto-expanding it and scrolling it into view.
+- **Bulk actions** — "Mark all Pass" / "Mark all Fail" / "Mark all Pending"
+  in the same Pin/Lock "more options" menu, at both module (every test
+  across all its sub-modules) and sub-module scope. Prompts for
+  confirmation only when it would overwrite existing Pass/Fail results
+  (naming how many); marking still-Pending tests, or re-marking tests
+  already at the target status, applies immediately. Disabled when the
+  module/sub-module is locked (or its parent module is, for a sub-module)
+  or has nothing to mark.
 
 ## Filtering
 
@@ -141,9 +149,12 @@ graduate the way Coming Soon bullets are.
 Proposed, not yet built. See the note at the top of this file for how a
 bullet graduates out of this section once it ships.
 
-- **Bulk actions** — mark every test in a module/sub-module (or a
-  multi-selection) Pass/Fail/Pending in one action, instead of one row at a
-  time.
+- **Ad-hoc multi-select bulk actions** — a checkbox-based selection across
+  arbitrary test rows (not just a whole module/sub-module) with its own
+  bulk-mark toolbar. Deferred v2 of the module/sub-module-level bulk
+  actions already shipped (see Organization & navigation) — needs a
+  checkbox column, a floating toolbar, and select-all, for a rarer use case
+  than "this whole section trivially passes."
 - **Keyboard shortcuts** — advance to the next pending test and mark it
   Pass/Fail without leaving the keyboard, for faster work on large suites.
 - **Modal focus return** — closing the confirm or report modal returns
