@@ -805,12 +805,20 @@ function downloadPdf(){
   exportJsonBtn.disabled = true;
   exportReportBtn.disabled = true;
   exportBtn.disabled = true;
+  confirmExportBtn.disabled = true;
   exportPdfBtn.querySelector('span').textContent = 'Generating…';
   closeExportMenu();
+  closeConfirmExportMenu();
 
   document.querySelectorAll('.module.collapsed').forEach(m => m.classList.add('was-collapsed'));
   document.querySelectorAll('.submodule.collapsed').forEach(m => m.classList.add('was-collapsed-sub'));
   document.body.classList.add('generating-pdf');
+
+  // PDF can be triggered from the Export dropdown inside the confirm modal
+  // (e.g. import-replace flow) — hide any open modal overlay for the
+  // capture so it doesn't get photographed into the page, then restore it.
+  const openModals = Array.from(document.querySelectorAll('.modal-overlay.open'));
+  openModals.forEach(m => m.classList.remove('open'));
 
   const opt = {
     margin:       [10, 10, 12, 10],
@@ -825,6 +833,8 @@ function downloadPdf(){
     document.body.classList.remove('generating-pdf');
     document.querySelectorAll('.was-collapsed').forEach(m => { m.classList.add('collapsed'); m.classList.remove('was-collapsed'); });
     document.querySelectorAll('.was-collapsed-sub').forEach(m => { m.classList.add('collapsed'); m.classList.remove('was-collapsed-sub'); });
+    openModals.forEach(m => m.classList.add('open'));
+    confirmExportBtn.disabled = false;
     exportPdfBtn.querySelector('span').textContent = originalLabel;
     updateActionButtons();
   };
@@ -1299,18 +1309,54 @@ const confirmTitleEl = document.getElementById('confirm-title');
 const confirmMessageEl = document.getElementById('confirm-message');
 let confirmCallback = null;
 
-function confirmModalOpen(title, message, onYes){
+/* Import-replace swaps in a second action row — Export (dropdown) /
+   Discard — instead of the default No/Yes; other callers (Reset-all, ...)
+   keep the default row. */
+const confirmActionsDefault = document.getElementById('confirm-actions-default');
+const confirmActionsImport = document.getElementById('confirm-actions-import');
+const confirmExportBtn = document.getElementById('confirm-export-btn');
+const confirmExportMenu = document.getElementById('confirm-export-menu');
+
+function closeConfirmExportMenu(){
+  confirmExportMenu.classList.remove('open');
+  confirmExportBtn.setAttribute('aria-expanded', 'false');
+}
+function openConfirmExportMenu(){
+  confirmExportMenu.classList.add('open');
+  confirmExportBtn.setAttribute('aria-expanded', 'true');
+}
+confirmExportBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (confirmExportMenu.classList.contains('open')) closeConfirmExportMenu();
+  else openConfirmExportMenu();
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.confirm-export-wrap')) closeConfirmExportMenu();
+});
+
+function confirmModalOpen(title, message, onYes, opts = {}){
   confirmTitleEl.textContent = title;
   confirmMessageEl.textContent = message;
   confirmCallback = onYes;
+  const showImportActions = !!opts.allowExport;
+  confirmActionsDefault.hidden = showImportActions;
+  confirmActionsImport.hidden = !showImportActions;
+  closeConfirmExportMenu();
   confirmModal.classList.add('open');
 }
 function confirmModalClose(){
   confirmModal.classList.remove('open');
   confirmCallback = null;
+  closeConfirmExportMenu();
 }
 document.getElementById('confirm-no').addEventListener('click', confirmModalClose);
+document.getElementById('confirm-modal-close').addEventListener('click', confirmModalClose);
 document.getElementById('confirm-yes').addEventListener('click', () => {
+  const cb = confirmCallback;
+  confirmModalClose();
+  if (cb) cb();
+});
+document.getElementById('confirm-discard-btn').addEventListener('click', () => {
   const cb = confirmCallback;
   confirmModalClose();
   if (cb) cb();
@@ -1319,7 +1365,32 @@ confirmModal.addEventListener('click', (e) => {
   if (e.target === confirmModal) confirmModalClose();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && confirmModal.classList.contains('open')) confirmModalClose();
+  if (e.key === 'Escape' && confirmModal.classList.contains('open')){
+    if (confirmExportMenu.classList.contains('open')) closeConfirmExportMenu();
+    else confirmModalClose();
+  }
+});
+
+/* Export dropdown items — call the existing export functions directly and
+   deliberately do NOT close the confirm modal itself (only their own
+   dropdown), so the pending Export/Discard decision is still there once the
+   export finishes. downloadPdf() separately hides the confirm modal for the
+   moment it captures the page (see downloadPdf), so it never ends up
+   photographing itself. */
+document.getElementById('confirm-export-pdf-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeConfirmExportMenu();
+  downloadPdf();
+});
+document.getElementById('confirm-export-json-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeConfirmExportMenu();
+  downloadJson();
+});
+document.getElementById('confirm-export-report-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeConfirmExportMenu();
+  openReportModal();
 });
 
 /* Reset all — with confirmation */
@@ -1337,10 +1408,10 @@ document.getElementById('reset-btn').addEventListener('click', () => {
 /* ---------- Import ---------- */
 const importInput = document.getElementById('import-input');
 document.getElementById('import-btn').addEventListener('click', () => importInput.click());
-importInput.addEventListener('change', () => {
-  const file = importInput.files[0];
-  importInput.value = ''; // allow re-selecting the same file later
-  if (!file) return;
+
+/* Shared by the file-picker input and drag-and-drop below — reads a File,
+   parses it as JSON, and hands it to applyImport(). */
+function importFile(file){
   const reader = new FileReader();
   reader.onload = () => {
     let parsed;
@@ -1350,6 +1421,52 @@ importInput.addEventListener('change', () => {
   };
   reader.onerror = () => alert('Import failed: could not read the file.');
   reader.readAsText(file);
+}
+
+importInput.addEventListener('change', () => {
+  const file = importInput.files[0];
+  importInput.value = ''; // allow re-selecting the same file later
+  if (!file) return;
+  importFile(file);
+});
+
+/* ---------- Drag-and-drop JSON import (anywhere on the page) ---------- */
+const dropzoneOverlay = document.getElementById('dropzone-overlay');
+let dragCounter = 0;
+
+function hasFilesInDrag(e){
+  return e.dataTransfer && Array.prototype.includes.call(e.dataTransfer.types || [], 'Files');
+}
+
+// Baseline guard: without this, a drop landing outside our own handlers
+// (e.g. the browser chrome around the page) navigates the tab to show the
+// raw dropped file instead of doing nothing.
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+
+document.addEventListener('dragenter', (e) => {
+  if (!hasFilesInDrag(e)) return;
+  dragCounter++;
+  dropzoneOverlay.classList.add('show');
+});
+
+document.addEventListener('dragleave', () => {
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) dropzoneOverlay.classList.remove('show');
+});
+
+document.addEventListener('drop', (e) => {
+  dragCounter = 0;
+  dropzoneOverlay.classList.remove('show');
+  if (!hasFilesInDrag(e)) return;
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file){ return; }
+  if (!/\.json$/i.test(file.name) && file.type !== 'application/json'){
+    alert('Import failed: drop a .json file.');
+    return;
+  }
+  importFile(file);
 });
 
 function validateImportShape(parsed){
@@ -1392,9 +1509,10 @@ function applyImport(parsed){
 
   if (allTests().length > 0){
     confirmModalOpen(
-      'Import test cases?',
+      'Import new report',
       "This replaces all currently loaded test cases and progress. This can't be undone.",
-      doImport
+      doImport,
+      { allowExport: true }
     );
   } else {
     doImport();

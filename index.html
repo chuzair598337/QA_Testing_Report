@@ -113,13 +113,48 @@
 <div class="toast" id="toast" role="alert" aria-live="polite"></div>
 
 <div class="modal-overlay" id="confirm-modal">
-  <div class="modal-box">
+  <div class="modal-box modal-box--closable">
+    <button type="button" class="icon-btn modal-close-btn" id="confirm-modal-close" aria-label="Cancel">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
     <h2 id="confirm-title">Are you sure?</h2>
     <p id="confirm-message"></p>
-    <div class="modal-actions">
+
+    <div class="modal-actions" id="confirm-actions-default">
       <button class="btn" id="confirm-no">No</button>
       <button class="btn danger" id="confirm-yes">Yes</button>
     </div>
+
+    <div class="modal-actions modal-actions--split" id="confirm-actions-import" hidden>
+      <div class="menu-wrap export-wrap confirm-export-wrap">
+        <button type="button" class="btn" id="confirm-export-btn" aria-haspopup="true" aria-expanded="false">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          <span>Export</span>
+        </button>
+        <div class="dropdown-menu export-menu" id="confirm-export-menu" role="menu">
+          <button type="button" class="dropdown-item" id="confirm-export-pdf-btn" role="menuitem">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>Download PDF</span>
+          </button>
+          <button type="button" class="dropdown-item" id="confirm-export-json-btn" role="menuitem">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+            <span>Download JSON</span>
+          </button>
+          <button type="button" class="dropdown-item" id="confirm-export-report-btn" role="menuitem">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg>
+            <span>Generate report</span>
+          </button>
+        </div>
+      </div>
+      <button type="button" class="btn danger" id="confirm-discard-btn">Discard Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="dropzone-overlay" id="dropzone-overlay" aria-hidden="true">
+  <div class="dropzone-box">
+    <svg class="icon icon-lg" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+    <p>Drop JSON file to import</p>
   </div>
 </div>
 
