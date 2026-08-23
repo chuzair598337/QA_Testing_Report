@@ -104,7 +104,8 @@
   .jump-group {
     width: 100%;
   }
-  .jump-group .jump-select {
+  .jump-group .jump-select,
+  .jump-group .search-wrap {
     width: 100%;
     max-width: none;
   }
@@ -163,8 +164,13 @@
     padding-left: 0;
   }
   select.status-select,
-  .note-toggle {
+  .note-toggle,
+  .search-input {
     min-height: 36px;
+  }
+  .search-clear-btn {
+    width: 32px;
+    height: 32px;
   }
 }
 

@@ -50,10 +50,16 @@ function escapeHtml(str){
 const root = document.getElementById('report-root');
 const jumpModuleSel = document.getElementById('jump-module');
 const jumpSubmoduleSel = document.getElementById('jump-submodule');
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear-btn');
 const pinnedBar = document.getElementById('pinned-bar');
 const pinnedItems = document.getElementById('pinned-items');
 const docTitleEl = document.getElementById('doc-title');
 let currentFilter = 'all';
+// Lowercased, trimmed live-search query — matched against each test row's
+// own text (see applyFilter). Combines with currentFilter (both must
+// match); independent of it otherwise.
+let searchQuery = '';
 let openMenuKey = null;
 let showSample = false;
 let suiteLoaded = false;
@@ -128,17 +134,28 @@ function jumpTo(id){
   });
 }
 
+// Clears the live-search query (input value + state + clear-button
+// visibility) without touching currentFilter or re-rendering — callers
+// follow up with whatever they already do (jumpTo()/render()/applyFilter()).
+function clearSearch(){
+  searchQuery = '';
+  searchInput.value = '';
+  searchClearBtn.hidden = true;
+}
+
 jumpModuleSel.addEventListener('change', () => {
   const modNum = jumpModuleSel.value;
   jumpSubmoduleSel.innerHTML = '<option value="">Jump to sub-module…</option>';
-  
+
   if (!modNum){
     jumpSubmoduleSel.style.display = 'none';
     return;
   }
 
-  // Reset filter to 'all' when jump nav is used
+  // Reset filter/search when jump nav is used — either could otherwise hide
+  // the module being jumped to.
   currentFilter = 'all';
+  clearSearch();
   document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
 
   const mod = modules.find(m => m.num === modNum);
@@ -158,11 +175,24 @@ jumpModuleSel.addEventListener('change', () => {
 
 jumpSubmoduleSel.addEventListener('change', () => {
   if (jumpSubmoduleSel.value){
-    // Reset filter to 'all' when jump nav is used
+    // Reset filter/search when jump nav is used — see the module handler above.
     currentFilter = 'all';
+    clearSearch();
     document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     jumpTo(`sub-${jumpSubmoduleSel.value}`);
   }
+});
+
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value.trim().toLowerCase();
+  searchClearBtn.hidden = !searchQuery;
+  applyFilter();
+});
+
+searchClearBtn.addEventListener('click', () => {
+  clearSearch();
+  applyFilter();
+  searchInput.focus();
 });
 
 function toggleCollapseModule(modNum){
@@ -389,7 +419,8 @@ function renderEmptySuite(){
 function updateFilterEmptyState(){
   let el = document.getElementById('filter-empty');
   const anyVisible = !!root.querySelector('.module:not(.filtered-out)');
-  const show = suiteLoaded && allTests().length > 0 && currentFilter !== 'all' && !anyVisible;
+  const filterActive = currentFilter !== 'all' || !!searchQuery;
+  const show = suiteLoaded && allTests().length > 0 && filterActive && !anyVisible;
 
   if (!show){
     if (el){
@@ -405,19 +436,37 @@ function updateFilterEmptyState(){
     root.appendChild(el);
   }
 
-  const label = FILTER_LABELS[currentFilter] || currentFilter;
+  // Search and the status filter (KPI cards) are independent and both must
+  // match — build the empty-state message for whichever combination is
+  // actually active, so "clear the filter" doesn't get suggested when
+  // there's no filter, only a search, and vice versa.
+  const statusLabel = FILTER_LABELS[currentFilter] || currentFilter;
+  const queryText = escapeHtml(searchInput.value.trim());
+  let title, hint;
+  if (searchQuery && currentFilter !== 'all'){
+    title = `No ${statusLabel.toLowerCase()} cases match “${queryText}”`;
+    hint = `Nothing matches both the <strong>${statusLabel}</strong> filter and your search. Clear either one to see more cases.`;
+  } else if (searchQuery){
+    title = `No cases match “${queryText}”`;
+    hint = `Nothing in the loaded suite matches your search. Clear it to see the full suite.`;
+  } else {
+    title = `No ${statusLabel.toLowerCase()} cases`;
+    hint = `Nothing matches the <strong>${statusLabel}</strong> filter right now. Clear the filter to see the full suite, or keep working — matching cases will appear here as statuses change.`;
+  }
+
   el.hidden = false;
   el.innerHTML = buildEmptyState({
     variant: 'filter',
     iconName: 'search',
-    title: `No ${label.toLowerCase()} cases`,
-    hint: `Nothing matches the <strong>${label}</strong> filter right now. Clear the filter to see the full suite, or keep working — matching cases will appear here as statuses change.`,
+    title,
+    hint,
     actionsHtml: `<button class="btn primary" id="clear-filter-btn" type="button">Show all cases</button>`
   });
   const clearBtn = document.getElementById('clear-filter-btn');
   if (clearBtn){
     clearBtn.addEventListener('click', () => {
       currentFilter = 'all';
+      clearSearch();
       document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
       applyFilter();
     });
@@ -657,15 +706,21 @@ function updateStats(){
 }
 
 function applyFilter(){
+  // Status filter (KPI cards) and live search are independent — a row has
+  // to satisfy both to stay visible.
+  const filterActive = currentFilter !== 'all' || !!searchQuery;
+
   document.querySelectorAll('.test-row').forEach(row => {
-    const show = currentFilter === 'all' || row.dataset.status === currentFilter;
-    row.classList.toggle('filtered-out', !show);
+    const statusMatch = currentFilter === 'all' || row.dataset.status === currentFilter;
+    const searchMatch = !searchQuery || row.querySelector('.test-text').textContent.toLowerCase().includes(searchQuery);
+    row.classList.toggle('filtered-out', !(statusMatch && searchMatch));
   });
 
   // Hide sub-module blocks that have no visible test rows left. While a
-  // status filter is active, auto-expand sub-modules with visible matches
-  // (otherwise the default-collapsed state would hide everything the filter
-  // is meant to surface); restore the saved collapsed state once back to "All".
+  // filter (status and/or search) is active, auto-expand sub-modules with
+  // visible matches (otherwise the default-collapsed state would hide
+  // everything the filter is meant to surface); restore the saved
+  // collapsed state once back to no filter at all.
   document.querySelectorAll('.submodule').forEach(smEl => {
     const hasVisible = !!smEl.querySelector('.test-row:not(.filtered-out)');
     smEl.classList.toggle('filtered-out', !hasVisible);
@@ -674,7 +729,7 @@ function applyFilter(){
     const parentMod = modules.find(m => m.subModules.some(s => s.num === subNum));
     const sm = parentMod && parentMod.subModules.find(s => s.num === subNum);
 
-    if (currentFilter !== 'all'){
+    if (filterActive){
       if (hasVisible && sm && !sm.locked) smEl.classList.remove('collapsed');
     } else {
       smEl.classList.toggle('collapsed', !!(sm && sm.collapsed));
@@ -689,7 +744,7 @@ function applyFilter(){
 
     const modNum = modEl.id.replace('mod-', '');
     const mod = modules.find(m => m.num === modNum);
-    if (currentFilter !== 'all'){
+    if (filterActive){
       if (hasVisible && mod && !mod.locked) modEl.classList.remove('collapsed');
     } else {
       modEl.classList.toggle('collapsed', !!(mod && mod.collapsed));
@@ -1506,6 +1561,7 @@ function applyImport(parsed){
     suiteLoaded = true;
     dirty = false; // freshly imported suite has no unsaved progress yet
     currentFilter = 'all';
+    clearSearch(); // a leftover query from the previous suite shouldn't silently hide the new one
     document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     render();
   };

@@ -65,14 +65,21 @@ both places at once.
 
 ## Filtering
 
+- **Search box** — live, as-you-type text search across test case text, on
+  the same row as the jump-nav dropdowns (stacks full-width below it on
+  mobile). Independent of the KPI status filter — both apply together, a
+  case has to match whichever of the two are active. Has its own clear
+  button; clears automatically on a fresh import or when jump nav is used
+  (either could otherwise hide the thing being jumped to).
 - **KPI cards as filters** — the Total/Passed/Failed/Pending stat cards in
   the header are clickable; clicking one filters the list to that status
   (Total clears the filter). The active card is highlighted.
-- **Filtered-out empty state** — a filter that matches nothing shows its
-  own message with a "Show all cases" reset, instead of a blank list.
-- Modules/sub-modules with no matching case under the active filter are
-  hidden entirely; matching ones auto-expand while a filter is active and
-  restore their saved collapsed state once cleared.
+- **Filtered-out empty state** — search and/or the status filter matching
+  nothing shows its own message (worded for whichever combination is
+  active) with a "Show all cases" reset, instead of a blank list.
+- Modules/sub-modules with no matching case under an active filter (status
+  and/or search) are hidden entirely; matching ones auto-expand while a
+  filter is active and restore their saved collapsed state once cleared.
 
 ## Reporting (Export → Generate report)
 
@@ -130,9 +137,6 @@ both places at once.
 Proposed, not yet built. See the note at the top of this file for how a
 bullet graduates out of this section once it ships.
 
-- **Search box** — type to filter test cases by matching text across the
-  whole suite, not just jump to a module/sub-module by picking from a
-  dropdown.
 - **Bulk actions** — mark every test in a module/sub-module (or a
   multi-selection) Pass/Fail/Pending in one action, instead of one row at a
   time.
