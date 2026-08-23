@@ -108,12 +108,22 @@ it's disabled. No migration impact; flip it on anytime after upgrading.
 
 ## Deployment
 
-Vercel builds and deploys automatically on every push — no GitHub Actions,
-no manual build step:
+Branch flow: `development → staging → main`. `development` is where
+feature/task branches fork from and PR back into; `staging` is promoted from
+`development` for preview/UAT; `main` is production. Both `staging` and
+`main` require a passing CI check (`.github/workflows/ci.yml` — lint, build,
+`npm audit`) before merge.
 
-- **Production**: the connected production branch.
-- **Preview**: every other branch and PR gets its own Preview URL
-  (`qa-testing-report-<hash>-<team>.vercel.app`).
+Vercel builds and deploys automatically on every push — no manual build step:
+
+- **Production**: `main`, at the project's default domain plus
+  `qa-testing-report-git-main-<team>.vercel.app`.
+- **Staging**: `staging`, at its own stable branch alias,
+  `qa-testing-report-git-staging-<team>.vercel.app` — Vercel assigns this
+  automatically per branch, no manual domain config needed.
+- **Preview**: every other branch/PR (including `development`) gets its own
+  Preview URL (`qa-testing-report-<hash>-<team>.vercel.app`, or the same
+  `git-<branch>-<team>` pattern for `development`).
 - Build command (`vercel.json`, repo root): `cd app && npm install && npm run
   build`, output `app/dist` — the Vue app lives in a subdirectory (see below),
   so the root `vercel.json` points the build there rather than needing a
@@ -122,10 +132,14 @@ no manual build step:
   set in Vercel Project Settings, scoped to Production/Preview/Development —
   never committed to the repo. `app/.env.local` (gitignored) holds real
   values for local dev only; `app/.env.example` documents the shape.
-- **Preview and Production currently share one Supabase project** — a
-  deliberate v1 tradeoff (no separate staging project), not an oversight. A
-  second Supabase project for Preview isolation is a possible future
-  follow-up if that starts to matter.
+- **Two Supabase projects, one per environment tier**:
+  - `pmrsojsxqjbzeikjgewe` ("QA_Testing_Report") — **Production only**. Holds
+    real user data; never point Preview/Development builds at it.
+  - A second project ("QA_Testing_Report-staging-dev") backs **Staging and
+    Development** — same schema (all migrations under `supabase/migrations/`
+    applied to both), same `invite-member` Edge Function, isolated data.
+  - Vercel's Production env vars point at the first; Preview + Development
+    env vars point at the second.
 
 ## File structure
 

@@ -18,6 +18,8 @@ development  →  staging  →  main
 - `staging` = promoted from `development`, gets a stable Vercel branch-alias domain (`qa-testing-report-git-staging-...vercel.app`).
 - `development` = primary dev branch; feature/task branches fork from it and PR back in.
 - Vercel project: `qa-testing-report` (id `prj_7yCtvIasOCypmWcubY4VCaRDAPCw`, team `chuzair598337-9124's projects`).
+- Supabase project **`gqkfgisaqmxlklybrath`** ("QA_Testing_Report-staging-dev", ap-northeast-2) backs Staging + Development — same schema/migrations/Edge Function as Production, isolated data. Every migration and every `invite-member` deploy must go to **both** Supabase projects.
+- Both `staging` and `main` have GitHub branch protection: PR required, `build-lint-audit` CI check required, no force-push/delete.
 
 ## Checklist
 
@@ -47,10 +49,14 @@ Also confirm `app/.env.local` stays untracked: `git ls-files | grep -i env` shou
 **6. Upload validation**
 Confirm `validateImportShape()` in `app/src/stores/useReports.js` still gates JSON import before any Storage upload, and that the client-side `accept=".json,application/json"` on the upload input (`DashboardView.vue`) still matches the bucket's `allowed_mime_types`.
 
+**7. invite-member rate limiting**
+The Edge Function throttles at 20 invites/hour/owner via `public.invite_attempts` (see `phase9_invite_rate_limit` migration) — confirm the table and its service_role-only grant still exist on both Supabase projects if `invite-member`'s code ever changes.
+
 ## Not automatable via MCP — check the Supabase dashboard directly
-- Auth **Site URL / Additional Redirect URLs** allow-list (must cover prod domain, staging alias, and a Vercel preview wildcard).
-- **Leaked password protection** toggle (Auth → Providers → Email).
+- Auth **Site URL / Additional Redirect URLs** allow-list (must cover prod domain, staging alias, and a Vercel preview wildcard) — needed on **both** Supabase projects.
+- **Leaked password protection** toggle (Auth → Providers → Email) — on both projects.
 - CORS, if ever customized beyond Supabase defaults.
+- Sentry (or other observability) is not installed — declined pending browser-side marketplace terms acceptance (`vercel integration add sentry`). Re-attempt if the user wants it.
 
 ## Related
 See the full Phase 9 audit + action plan this skill was distilled from: `/Users/master/.claude/plans/system-directive-production-readiness-kind-blanket.md` (local to the session that wrote it, not part of this repo).

@@ -76,6 +76,31 @@ Deno.serve(async (req: Request) => {
     // Supabase's infra, not the client).
     const adminClient = createClient(supabaseUrl, serviceRoleKey)
 
+    // Rate limit: max 20 invite attempts per owner per rolling hour.
+    // Edge Function instances are ephemeral/multi-instance, so in-memory
+    // counters aren't reliable — backed by the invite_attempts table
+    // instead (see phase9_invite_rate_limit migration).
+    const RATE_LIMIT = 20
+    const RATE_WINDOW_MS = 60 * 60 * 1000
+    const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+
+    const { count: recentAttempts, error: rateLimitError } = await adminClient
+      .from('invite_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userData.user.id)
+      .gte('created_at', windowStart)
+
+    if (rateLimitError) {
+      return json({ error: rateLimitError.message }, 500)
+    }
+    if ((recentAttempts ?? 0) >= RATE_LIMIT) {
+      return json(
+        { error: `Too many invites sent recently. Try again in a bit (limit: ${RATE_LIMIT}/hour).` },
+        429,
+      )
+    }
+    await adminClient.from('invite_attempts').insert({ user_id: userData.user.id })
+
     // No guaranteed direct "get user by email" admin call across
     // supabase-js versions — list + filter client-side. Fine for this
     // app's scale; revisit with pagination if the user base grows large.
