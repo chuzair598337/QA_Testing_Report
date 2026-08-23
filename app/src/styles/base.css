@@ -812,6 +812,25 @@
   .status-select-wrap[data-val="pass"]{ color:#fff; }
   .status-select-wrap[data-val="fail"]{ color:#fff; }
 
+  /* PDF-only stand-in for the native <select> above (see TestRow.vue) —
+     plain text in a plain span, hidden outside PDF capture. Deliberately
+     --sans not --mono: avoids any risk of the same web-font-not-loaded
+     race that corrupts the select's rendered glyphs. */
+  .status-pill-print{
+    display:none;
+    font-family:var(--sans);
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:normal;
+    text-transform:uppercase;
+    padding:6px 10px;
+    border-radius:6px;
+    border:1px solid var(--border-strong);
+  }
+  .status-pill-print[data-val="pending"]{ background:var(--pending-bg); color:var(--ink-soft); border-color:var(--border-strong); }
+  .status-pill-print[data-val="pass"]{ background:var(--pass); color:#fff; border-color:var(--pass); }
+  .status-pill-print[data-val="fail"]{ background:var(--fail); color:#fff; border-color:var(--fail); }
+
   .note-toggle{
     display:inline-flex;
     align-items:center;
@@ -921,6 +940,21 @@
   body.generating-pdf .menu-wrap{ display:none; }
   body.generating-pdf .module.collapsed .module-body{ display:block; }
   body.generating-pdf .submodule.collapsed .submodule-body{ display:block; }
+  /* html2canvas renders native <select> option text unreliably (glyphs
+     come out corrupted) and linear-gradient row backgrounds as a blurry
+     smudge rather than a clean fade — both confirmed by actually opening
+     a generated PDF, not assumed. Swap to the plain-text stand-in and a
+     flat color for the capture only; live UI (outside .generating-pdf)
+     is untouched. */
+  body.generating-pdf select.status-select{ display:none; }
+  body.generating-pdf .status-pill-print{ display:inline-block; }
+  /* .status-select-wrap::after is the select's dropdown-chevron
+     indicator — still rendered (and now overlapping the plain-text
+     pill) since only the <select> itself, not its wrapper, is hidden
+     above. */
+  body.generating-pdf .status-select-wrap::after{ display:none; }
+  body.generating-pdf .test-row[data-status="fail"]{ background:var(--fail-bg); }
+  body.generating-pdf .test-row[data-status="pass"]{ background:var(--pass-bg); }
   body.generating-pdf .test-row.filtered-out{ display:block; }
   body.generating-pdf .submodule.filtered-out{ display:block; }
   body.generating-pdf .module.filtered-out{ display:block; }

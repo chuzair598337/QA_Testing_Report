@@ -30,6 +30,9 @@ watch(
 
 const editDisabled = computed(() => props.disabled || props.locked)
 
+const STATUS_LABELS = { pending: 'Pending', pass: 'Pass', fail: 'Fail' }
+const statusLabel = computed(() => STATUS_LABELS[props.test.status] || 'Pending')
+
 function toggleNote() {
   noteOpen.value = !noteOpen.value
 }
@@ -50,6 +53,13 @@ function onNoteInput() {
       <span class="test-text">{{ test.name }}</span>
       <div class="test-controls">
         <span class="status-select-wrap" :data-val="test.status">
+          <!-- html2canvas (used for PDF export) renders native <select>
+               option text unreliably — glyphs come out corrupted
+               ("Pass" -> "Dace", "Fail" -> "Esil") since it can't
+               faithfully rasterize native form-control internals. This
+               plain span is the PDF-only stand-in; base.css swaps
+               visibility between the two under body.generating-pdf. -->
+          <span class="status-pill-print" :data-val="test.status">{{ statusLabel }}</span>
           <select
             class="status-select"
             :data-val="test.status"
