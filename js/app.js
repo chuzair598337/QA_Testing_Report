@@ -873,6 +873,7 @@ const reportCopyBtn = document.getElementById('report-copy-btn');
 const reportCopyLabel = document.getElementById('report-copy-label');
 const reportDownloadBtn = document.getElementById('report-download-btn');
 let latestReportMarkdown = '';
+let latestReportClipboardHtml = '';
 
 function escapeHtml(str){
   return String(str)
@@ -916,11 +917,14 @@ function escapeTeamsMarkdown(str){
   return String(str).replace(/([*_~`\\])/g, '\\$1');
 }
 
-/* Builds the report as Microsoft Teams' subset markdown (typed-markdown that
-   converts live in the compose box / renders on paste) — see README for the
-   supported-syntax reference. Modules and sub-modules are headings (## / ###)
-   under the doc title (#); no pipe-style tables, since Teams chat doesn't
-   render those. This is what Copy to clipboard and Download both use. */
+/* Builds the report as Microsoft Teams' subset markdown (# / ## / ### headings,
+   **bold**, > blockquote) — see README for the supported-syntax reference.
+   This is what Download saves as a .md file, and also what Copy to clipboard
+   writes as the text/plain fallback for paste targets that don't accept
+   rich HTML (plain-text editors, terminals, etc). Teams' typed-markdown only
+   converts syntax as you type it — pasting this text in verbatim does NOT
+   re-render it, so it is not what makes the *pasted* chat message look
+   formatted; buildReportClipboardHtml() below does that job. */
 function buildReportMarkdown(data){
   const generatedAt = new Date().toLocaleString();
   const lines = [];
@@ -956,6 +960,48 @@ function buildReportMarkdown(data){
   });
 
   return lines.join('\n').trim() + '\n';
+}
+
+/* Builds the report as a plain semantic HTML fragment (real <h1>/<h2>/<h3>,
+   <strong>, <ol>/<li>, <blockquote> — no CSS classes/styling) for the
+   text/html clipboard entry. Teams' compose box (like Word/Outlook/Slack) is
+   a rich-text editor: pasting HTML renders it as formatted rich text, while
+   pasting plain markdown syntax just inserts the literal characters. This is
+   what actually makes a pasted chat message look like a formatted report —
+   buildReportMarkdown() above only supplies the text/plain fallback + the
+   .md download. Kept deliberately unstyled (no class names, no <div>s) so
+   Teams' paste sanitizer has nothing to strip and nothing surprising bleeds
+   into the chat's own styling. */
+function buildReportClipboardHtml(data){
+  if (!data.total){
+    return `<p><strong>No passed or failed cases yet.</strong></p>`;
+  }
+
+  const generatedAt = new Date().toLocaleString();
+  let html = `<h1>${escapeHtml(docTitle)}</h1>`;
+  html += `<p><strong>Generated:</strong> ${escapeHtml(generatedAt)}</p>`;
+  html += `<p><strong>Summary:</strong> ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)</p>`;
+
+  data.sections.forEach(mod => {
+    html += `<h2>${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h2>`;
+    mod.subModules.forEach(sm => {
+      html += `<h3>${escapeHtml(sm.num)} ${escapeHtml(sm.title)}</h3>`;
+      html += `<ol>`;
+      sm.cases.forEach(t => {
+        const status = t.status === 'pass' ? 'Passed' : 'Failed';
+        const note = (t.note || '').trim();
+        html += `<li><strong>[${escapeHtml(status)}]</strong> ${escapeHtml(t.id)} — ${escapeHtml(t.text)}`;
+        if (note){
+          const noteHtml = note.split(/\n/).map(line => escapeHtml(line)).join('<br>');
+          html += `<blockquote>Note: ${noteHtml}</blockquote>`;
+        }
+        html += `</li>`;
+      });
+      html += `</ol>`;
+    });
+  });
+
+  return html;
 }
 
 function buildReportHtml(data){
@@ -1005,6 +1051,7 @@ function openReportModal(){
   }
   
   latestReportMarkdown = buildReportMarkdown(data);
+  latestReportClipboardHtml = buildReportClipboardHtml(data);
   reportModalBody.innerHTML = buildReportHtml(data);
   reportCopyLabel.textContent = 'Copy to clipboard';
   reportCopyBtn.disabled = false;
@@ -1027,12 +1074,35 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && reportModal.classList.contains('open')) closeReportModal();
 });
 
+function markCopied(){
+  reportCopyLabel.textContent = 'Copied!';
+  setTimeout(() => { reportCopyLabel.textContent = 'Copy to clipboard'; }, 1600);
+}
+
 reportCopyBtn.addEventListener('click', async () => {
   if (!latestReportMarkdown) return;
+
+  // Preferred: write both text/html (rich — renders formatted on paste into
+  // Teams/Word/Outlook/Slack) and text/plain (the Teams-markdown fallback,
+  // for paste targets that don't accept rich HTML). Requires the async
+  // Clipboard API + ClipboardItem, unavailable on some older/mobile browsers.
+  if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+    try {
+      const item = new ClipboardItem({
+        'text/html': new Blob([latestReportClipboardHtml], { type: 'text/html' }),
+        'text/plain': new Blob([latestReportMarkdown], { type: 'text/plain' })
+      });
+      await navigator.clipboard.write([item]);
+      markCopied();
+      return;
+    } catch (err) {
+      // Fall through to the plain-text paths below.
+    }
+  }
+
   try {
     await navigator.clipboard.writeText(latestReportMarkdown);
-    reportCopyLabel.textContent = 'Copied!';
-    setTimeout(() => { reportCopyLabel.textContent = 'Copy to clipboard'; }, 1600);
+    markCopied();
   } catch (err) {
     // Fallback for older mobile browsers
     const ta = document.createElement('textarea');
@@ -1044,8 +1114,7 @@ reportCopyBtn.addEventListener('click', async () => {
     ta.select();
     try {
       document.execCommand('copy');
-      reportCopyLabel.textContent = 'Copied!';
-      setTimeout(() => { reportCopyLabel.textContent = 'Copy to clipboard'; }, 1600);
+      markCopied();
     } catch (e2) {
       alert('Could not copy to clipboard.');
     }
