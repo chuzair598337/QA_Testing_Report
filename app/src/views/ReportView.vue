@@ -169,15 +169,6 @@ function showToast(message) {
   }, 3200)
 }
 
-async function copyMyId() {
-  try {
-    await navigator.clipboard.writeText(user.value.id)
-    showToast('User ID copied.')
-  } catch {
-    showToast('Could not copy automatically — select and copy the ID manually.')
-  }
-}
-
 // ---------------------------------------------------------------------
 // Delete (archive) report.
 // ---------------------------------------------------------------------
@@ -204,7 +195,7 @@ async function submitInvite() {
   inviteError.value = ''
   inviteSuccess.value = ''
   if (!inviteValue.value.trim()) {
-    inviteError.value = 'Enter a User ID.'
+    inviteError.value = 'Enter an email address.'
     return
   }
   inviteBusy.value = true
@@ -214,8 +205,13 @@ async function submitInvite() {
     inviteError.value = error
     return
   }
-  members.value.push(data)
-  inviteSuccess.value = 'Member added.'
+  // The Edge Function returns a status/message, not the member row itself
+  // (an 'invited' result has no row yet — it's pending the invitee's
+  // signup) — refetch instead of guessing what to push into the list.
+  if (data?.status === 'added') {
+    await load()
+  }
+  inviteSuccess.value = data?.message || 'Invite sent.'
   inviteValue.value = ''
 }
 
@@ -431,16 +427,6 @@ async function handleRemoveMember(member) {
     <div class="modal-box modal-box--form">
       <h2>Manage access</h2>
 
-      <p class="field-hint" style="margin-bottom: 12px">
-        Your User ID (share this with an owner to be invited to one of their reports):
-      </p>
-      <span class="your-id-chip" :title="user?.id" style="margin-bottom: 16px">
-        {{ user?.id }}
-        <button type="button" aria-label="Copy your User ID" @click="copyMyId">
-          <Icon name="copy" cls="icon-sm" />
-        </button>
-      </span>
-
       <div>
         <div v-for="member in members" :key="member.id" class="member-row">
           <div class="member-row-id">
@@ -472,18 +458,18 @@ async function handleRemoveMember(member) {
       </div>
 
       <div class="auth-field" style="margin-top: 16px">
-        <label class="auth-label" for="report-invite-id">Invite by User ID</label>
+        <label class="auth-label" for="report-invite-id">Invite by email</label>
         <input
           id="report-invite-id"
           v-model="inviteValue"
-          type="text"
+          type="email"
           class="auth-input"
           :disabled="inviteBusy"
-          placeholder="00000000-0000-0000-0000-000000000000"
+          placeholder="teammate@example.com"
         />
         <p class="field-hint">
-          We can't look accounts up by email — ask them to sign in and copy their User ID from
-          their own Dashboard or this panel.
+          If they already have an account they're added immediately; otherwise we send them an
+          invite email to create one.
         </p>
       </div>
       <div class="auth-field">

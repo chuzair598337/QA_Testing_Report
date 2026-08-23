@@ -79,20 +79,6 @@ function showToast(message) {
 }
 
 // ---------------------------------------------------------------------
-// "Your User ID" — the only way anyone (owner or a would-be invitee) can
-// get a user_id to invite/be-invited with; see useReports.js's inviteMember
-// doc comment for why this exists.
-// ---------------------------------------------------------------------
-async function copyMyId() {
-  try {
-    await navigator.clipboard.writeText(user.value.id)
-    showToast('User ID copied.')
-  } catch {
-    showToast('Could not copy automatically — select and copy the ID manually.')
-  }
-}
-
-// ---------------------------------------------------------------------
 // Create-report modal: title -> JSON file -> (create pipeline) -> optional
 // invite-teammates sub-step.
 // ---------------------------------------------------------------------
@@ -164,17 +150,17 @@ async function submitInvite() {
   inviteError.value = ''
   inviteSuccess.value = ''
   if (!inviteValue.value.trim()) {
-    inviteError.value = 'Enter a User ID.'
+    inviteError.value = 'Enter an email address.'
     return
   }
   inviteBusy.value = true
-  const { error } = await inviteMember(createdReportId.value, inviteValue.value, inviteRole.value)
+  const { data, error } = await inviteMember(createdReportId.value, inviteValue.value, inviteRole.value)
   inviteBusy.value = false
   if (error) {
     inviteError.value = error
     return
   }
-  inviteSuccess.value = 'Member added.'
+  inviteSuccess.value = data?.message || 'Member added.'
   inviteValue.value = ''
 }
 
@@ -211,12 +197,6 @@ async function handleUnarchive(report) {
           <h1>Dashboard</h1>
         </div>
         <div class="head-actions">
-          <span class="your-id-chip" :title="user?.id">
-            Your ID: {{ user?.id?.slice(0, 8) }}…
-            <button type="button" aria-label="Copy your User ID" @click="copyMyId">
-              <Icon name="copy" cls="icon-sm" />
-            </button>
-          </span>
           <button class="btn" type="button" @click="toggleTheme">
             <Icon :name="theme === 'dark' ? 'sun' : 'moon'" />
             <span class="btn-label">{{ theme === 'dark' ? 'Light' : 'Dark' }}</span>
@@ -411,18 +391,18 @@ async function handleUnarchive(report) {
         <p v-if="inviteSuccess" class="auth-success">{{ inviteSuccess }}</p>
 
         <div class="auth-field">
-          <label class="auth-label" for="invite-id">Teammate's User ID</label>
+          <label class="auth-label" for="invite-id">Teammate's email</label>
           <input
             id="invite-id"
             v-model="inviteValue"
-            type="text"
+            type="email"
             class="auth-input"
             :disabled="inviteBusy"
-            placeholder="00000000-0000-0000-0000-000000000000"
+            placeholder="teammate@example.com"
           />
           <p class="field-hint">
-            They can find this on their own Dashboard ("Your ID" in the header) once they've
-            signed in — we can't look accounts up by email (see FEATURES.md / phase notes).
+            If they already have an account they're added immediately; otherwise we send them an
+            invite email to create one.
           </p>
         </div>
 

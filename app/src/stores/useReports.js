@@ -38,10 +38,6 @@ function normalizeStatus(value) {
   return VALID_STATUSES.includes(value) ? value : 'pending'
 }
 
-// Matches a bare UUID (v1-v5, case-insensitive) — see inviteMember() below
-// for why this is the gate on what we accept as a member identifier.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 // ---------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------
@@ -286,53 +282,49 @@ async function unarchiveReport(reportId) {
 // ---------------------------------------------------------------------
 // Membership actions
 //
-// IMPORTANT — invite-by-email gap: report_members can only ever be
-// written by (a) a report's owner inserting an arbitrary member row, or
-// (b) a brand-new report's creator bootstrapping their own owner row (see
-// the report_members_insert_owner / report_members_insert_bootstrap
-// policies in the Phase 2 migration). Neither policy — nor anything else
-// reachable with only the anon key — lets the client resolve an email
-// address to a user_id: there is no admin API available here, and this
-// schema has no `profiles` table to look one up in. So "invite by email"
-// cannot actually place a row for someone the owner only knows by email.
+// Invite-by-email: report_members can only ever be written directly by
+// (a) a report's owner inserting an arbitrary member row, or (b) a
+// brand-new report's creator bootstrapping their own owner row (see the
+// report_members_insert / report_members_insert_bootstrap policies in
+// the Phase 2 migration). Neither policy — nor anything else reachable
+// with only the anon key — lets the client resolve an email address to a
+// user_id (no admin API, no profiles table), so this cannot be a direct
+// table write from here.
 //
-// The workaround implemented here: the owner supplies the invitee's raw
-// User ID (a UUID) instead of (or in addition to) their email. Every
-// signed-in member can see their own User ID in the Manage Access panel
-// (ReportView.vue) and copy it to share with the report's owner out of
-// band (chat, email, etc.) — the owner then pastes that ID here. A plain
-// email is rejected with an explanatory inline message rather than
-// silently failing. This works identically for brand-new and existing
-// accounts, since either way it's just a UUID once the person has signed
-// in at least once.
+// Instead this calls the `invite-member` Edge Function, which holds the
+// service-role key server-side (never in the browser) to: verify the
+// caller actually owns this report (via the caller's own JWT, respecting
+// RLS, before touching anything privileged), look up whether the email
+// already has an account, and either insert the member row directly
+// (existing account) or call admin.inviteUserByEmail() (new account —
+// its raw_user_meta_data carries invited_report_id/invited_role, which a
+// Postgres trigger reads to auto-attach report_members the moment that
+// invite is accepted and the account is created).
 // ---------------------------------------------------------------------
-async function inviteMember(reportId, idOrEmail, role) {
-  const value = (idOrEmail || '').trim()
+async function inviteMember(reportId, email, role) {
+  const value = (email || '').trim()
 
-  if (!UUID_RE.test(value)) {
-    return {
-      data: null,
-      error:
-        "Can't invite by email alone — this app has no way to look up an account by email address " +
-        '(no admin API, no profiles table). Ask the person to sign in, then copy their User ID from ' +
-        "the Manage Access panel and paste it here instead.",
-    }
+  if (!value) {
+    return { data: null, error: 'Enter an email address.' }
+  }
+  if (!['editor', 'viewer'].includes(role)) {
+    return { data: null, error: 'Role must be editor or viewer.' }
   }
 
-  const { data, error } = await supabase
-    .from('report_members')
-    .insert({ report_id: reportId, user_id: value, role })
-    .select()
-    .single()
+  const { data, error } = await supabase.functions.invoke('invite-member', {
+    body: { report_id: reportId, email: value, role },
+  })
 
   if (error) {
-    if (error.code === '23505') {
-      return { data: null, error: 'That person is already a member of this report.' }
-    }
-    if (error.code === '23503') {
-      return { data: null, error: 'No account exists with that User ID.' }
-    }
-    return { data: null, error: error.message }
+    // supabase-js surfaces non-2xx Edge Function responses as a generic
+    // FunctionsHttpError — the function's own { error } body carries the
+    // real message, so pull it out for a useful inline message.
+    const detail = await error.context?.json?.().catch(() => null)
+    return { data: null, error: detail?.error || error.message }
+  }
+
+  if (data?.error) {
+    return { data: null, error: data.error }
   }
 
   return { data, error: null }
