@@ -943,11 +943,14 @@ function buildReportMarkdown(data){
     lines.push(`## ${mod.num}. ${escapeTeamsMarkdown(mod.title)}`);
     lines.push('');
     mod.subModules.forEach(sm => {
-      lines.push(`### ${sm.num} ${escapeTeamsMarkdown(sm.title)}`);
+      lines.push(`### ${sm.num}. ${escapeTeamsMarkdown(sm.title)}`);
       lines.push('');
-      sm.cases.forEach((t, idx) => {
+      sm.cases.forEach(t => {
         const status = t.status === 'pass' ? 'Passed' : 'Failed';
-        lines.push(`${idx + 1}. **[${status}]** ${t.id} — ${escapeTeamsMarkdown(t.text)}`);
+        // No markdown list marker here — t.id is already the full compound
+        // number (module.sub.case), so a "1." list prefix in front of it
+        // would just double up with it once rendered (# 1.1.1 → "1. 1.1.1").
+        lines.push(`${t.id} **[${status}]** — ${escapeTeamsMarkdown(t.text)}`);
         if (t.note && t.note.trim()){
           t.note.trim().split(/\n/).forEach((noteLine, ni) => {
             const text = escapeTeamsMarkdown(noteLine);
@@ -963,7 +966,7 @@ function buildReportMarkdown(data){
 }
 
 /* Builds the report as a plain semantic HTML fragment (real <h1>/<h2>/<h3>,
-   <strong>, <ol>/<li>, <blockquote> — no CSS classes/styling) for the
+   <strong>, <p>, <blockquote> — no CSS classes/styling, no <ol>/<li>) for the
    text/html clipboard entry. Teams' compose box (like Word/Outlook/Slack) is
    a rich-text editor: pasting HTML renders it as formatted rich text, while
    pasting plain markdown syntax just inserts the literal characters. This is
@@ -971,7 +974,13 @@ function buildReportMarkdown(data){
    buildReportMarkdown() above only supplies the text/plain fallback + the
    .md download. Kept deliberately unstyled (no class names, no <div>s) so
    Teams' paste sanitizer has nothing to strip and nothing surprising bleeds
-   into the chat's own styling. */
+   into the chat's own styling.
+
+   Test cases are plain <p> lines, not an <ol> list: nested lists don't chain
+   into compound "1.1.1"-style numbering in any rich-text editor (each level
+   just restarts its own counter), and we already have the full compound
+   number as text (t.id) — an auto-numbered <li> on top of that would double
+   up ("1. 1.1.1 ..."), which is what the previous version did. */
 function buildReportClipboardHtml(data){
   if (!data.total){
     return `<p><strong>No passed or failed cases yet.</strong></p>`;
@@ -985,19 +994,16 @@ function buildReportClipboardHtml(data){
   data.sections.forEach(mod => {
     html += `<h2>${escapeHtml(mod.num)}. ${escapeHtml(mod.title)}</h2>`;
     mod.subModules.forEach(sm => {
-      html += `<h3>${escapeHtml(sm.num)} ${escapeHtml(sm.title)}</h3>`;
-      html += `<ol>`;
+      html += `<h3>${escapeHtml(sm.num)}. ${escapeHtml(sm.title)}</h3>`;
       sm.cases.forEach(t => {
         const status = t.status === 'pass' ? 'Passed' : 'Failed';
         const note = (t.note || '').trim();
-        html += `<li><strong>[${escapeHtml(status)}]</strong> ${escapeHtml(t.id)} — ${escapeHtml(t.text)}`;
+        html += `<p>${escapeHtml(t.id)} <strong>[${escapeHtml(status)}]</strong> — ${escapeHtml(t.text)}</p>`;
         if (note){
           const noteHtml = note.split(/\n/).map(line => escapeHtml(line)).join('<br>');
           html += `<blockquote>Note: ${noteHtml}</blockquote>`;
         }
-        html += `</li>`;
       });
-      html += `</ol>`;
     });
   });
 
