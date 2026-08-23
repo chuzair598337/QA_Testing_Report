@@ -38,7 +38,11 @@ graduate the way Coming Soon bullets are.
 - **Export → Download PDF** — a printable snapshot of the current state
   (everything expanded, filters cleared) via `html2pdf.js`.
 - **Reset all** — sets every test back to Pending and clears all notes,
-  behind a confirmation prompt.
+  behind a confirmation prompt. One-level Undo: a toast with an Undo action
+  appears right after, restoring every status/note exactly as it was
+  before the reset. Cleared on the next import (a stale snapshot from a
+  different suite must not resurrect into the new one) and superseded by
+  the next reset (only the most recent one is undoable).
 - **In-memory only, no persistence** — no `localStorage`, no backend.
   Closing or reloading the tab without exporting first loses in-progress
   work by design. A `beforeunload` prompt warns before that happens while a
@@ -57,7 +61,9 @@ graduate the way Coming Soon bullets are.
 - **Collapse / expand** modules and sub-modules (collapsed by default);
   each header shows a mini pass/fail progress bar and `done/total` count.
 - **Pin / unpin** a module or sub-module to a pinned bar under the header
-  for quick access; click a pinned chip to jump to it.
+  for quick access; click a pinned chip to jump to it. A pinned module/
+  sub-module also carries its own pin icon next to its title (alongside
+  the lock icon when both apply), matching how locked ones are marked.
 - **Lock / unlock** a module or sub-module — locked cases can't have their
   status or note edited, and a locked card auto-collapses and can't be
   expanded again until unlocked. Since locked content only actually renders
@@ -166,8 +172,6 @@ bullet graduates out of this section once it ships.
   a base/revised suite and merges in status/notes from a previously
   exported results file, matched by module+sub-module+test-text (not
   position, since array order can change) rather than replacing everything.
-- **Undo for Reset all** — single-level undo (one Reset back) via a toast
-  with an Undo action, not a full undo/redo stack.
 - **Changed-since-last-import diff** — when a revised suite is imported over
   an existing one, highlight which modules/sub-modules/tests are new or
   changed instead of a silent full replace.

@@ -585,6 +585,9 @@
   .module.menu-open{ overflow:visible; position:relative; z-index:40; }
 
   .lock-badge{ display:inline-flex; color:var(--primary); flex-shrink:0; }
+  /* Distinct color from .lock-badge so a module/sub-module that's both
+     pinned and locked still reads as two separate signals, not one blur. */
+  .pin-badge{ display:inline-flex; color:var(--accent); flex-shrink:0; }
 
   .submodule{
     padding:0 18px;
@@ -1257,7 +1260,7 @@
     transform:translateX(-50%) translateY(100px);
     background:var(--surface);
     color:var(--ink);
-    padding:14px 20px;
+    padding:12px 14px 12px 20px;
     border-radius:var(--radius);
     border:1px solid var(--border);
     box-shadow:var(--shadow);
@@ -1269,10 +1272,30 @@
     transition:transform 0.3s ease, opacity 0.3s ease;
     max-width:90%;
     width:auto;
-    text-align:center;
+    display:flex;
+    align-items:center;
+    gap:16px;
   }
   .toast.show{
     transform:translateX(-50%) translateY(0);
     opacity:1;
     pointer-events:auto;
   }
+  .toast-msg{ text-align:left; }
+  .toast-action{
+    flex-shrink:0;
+    appearance:none;
+    border:none;
+    background:none;
+    padding:6px 10px;
+    margin:-6px -4px -6px 0;
+    border-radius:6px;
+    font-family:var(--sans);
+    font-size:13px;
+    font-weight:700;
+    color:var(--accent);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .toast-action:hover{ background:var(--hover-bg); }
+  .toast-action[hidden]{ display:none; }

@@ -69,6 +69,13 @@ let docTitle = docTitleEl.textContent;
 // fires for genuinely unsaved work, not on every reload after a suite has
 // already been exported.
 let dirty = false;
+// One-level undo for Reset all: a snapshot of every test's status/note
+// taken right before the most recent reset, keyed by id (stable for the
+// life of the loaded suite). Null when there's nothing to undo — no reset
+// yet this session, undo already used, or a new suite has been imported
+// since (cleared in doImport() so a stale snapshot can't "resurrect" data
+// into the wrong suite).
+let lastResetSnapshot = null;
 
 /* Builds the numbered module/sub-module/test-row structure from a plain
    { title, subModules: [{ title, tests: [{ text, status?, note? }] }] }
@@ -577,6 +584,7 @@ function render(){
       <span class="chevron-icon">${icon('chevronDown')}</span>
       <span class="module-num">${mod.num}.</span>
       <span class="module-title">${escapeHtml(mod.title)}</span>
+      ${mod.pinned ? `<span class="pin-badge" title="Pinned">${icon('pin', 'icon-sm')}</span>` : ''}
       ${mod.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
     `;
 
@@ -620,6 +628,7 @@ function render(){
         <span class="chevron-icon">${icon('chevronDown')}</span>
         <span class="sub-num">${sm.num}.</span>
         <span class="sub-title-text">${escapeHtml(sm.title)}</span>
+        ${sm.pinned ? `<span class="pin-badge" title="Pinned">${icon('pin', 'icon-sm')}</span>` : ''}
         ${sm.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
       `;
 
@@ -1002,12 +1011,37 @@ exportReportBtn.addEventListener('click', (e) => {
 
 /* ---------- Toast notification ---------- */
 const toast = document.getElementById('toast');
+const toastMsg = document.getElementById('toast-msg');
+const toastActionBtn = document.getElementById('toast-action');
 let toastTimeout = null;
+let toastActionHandler = null;
 
-function showToast(message, duration = 3000){
-  toast.textContent = message;
+/* `action`, when given, is { label, onAction } — shows a clickable action
+   button next to the message (e.g. "Undo") instead of the plain text-only
+   toast. Clicking it (or the toast auto-dismissing) both clear the action
+   the same way, so a stale handler can't fire after the toast is gone. */
+function showToast(message, duration = 3000, action){
+  toastMsg.textContent = message;
+
+  if (toastActionHandler){
+    toastActionBtn.removeEventListener('click', toastActionHandler);
+    toastActionHandler = null;
+  }
+  if (action){
+    toastActionBtn.textContent = action.label;
+    toastActionBtn.hidden = false;
+    toastActionHandler = () => {
+      action.onAction();
+      toast.classList.remove('show');
+      if (toastTimeout) clearTimeout(toastTimeout);
+    };
+    toastActionBtn.addEventListener('click', toastActionHandler);
+  } else {
+    toastActionBtn.hidden = true;
+  }
+
   toast.classList.add('show');
-  
+
   if (toastTimeout) clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => {
     toast.classList.remove('show');
@@ -1522,15 +1556,29 @@ document.getElementById('confirm-export-report-btn').addEventListener('click', (
   openReportModal();
 });
 
-/* Reset all — with confirmation */
+/* Reset all — with confirmation, and a one-level Undo via the toast. */
+function undoReset(){
+  if (!lastResetSnapshot) return;
+  const byId = new Map(lastResetSnapshot.map(s => [s.id, s]));
+  allTests().forEach(t => {
+    const prev = byId.get(t.id);
+    if (prev){ t.status = prev.status; t.note = prev.note; }
+  });
+  lastResetSnapshot = null;
+  dirty = true; // can't cheaply tell if this exactly matches the last export — safe default
+  render();
+}
+
 document.getElementById('reset-btn').addEventListener('click', () => {
   confirmModalOpen(
     'Reset all test cases?',
-    "This sets every test back to Pending and clears all notes. This can't be undone.",
+    'This sets every test back to Pending and clears all notes. You can undo it right after.',
     () => {
+      lastResetSnapshot = allTests().map(t => ({ id: t.id, status: t.status, note: t.note }));
       allTests().forEach(t => { t.status = 'pending'; t.note = ''; });
       dirty = false; // reset returns to the original imported (still-pending) state
       render();
+      showToast('All test cases reset.', 6000, { label: 'Undo', onAction: undoReset });
     }
   );
 });
@@ -1635,6 +1683,7 @@ function applyImport(parsed){
     dirty = false; // freshly imported suite has no unsaved progress yet
     currentFilter = 'all';
     clearSearch(); // a leftover query from the previous suite shouldn't silently hide the new one
+    lastResetSnapshot = null; // a stale snapshot from the previous suite must not resurrect into this one
     document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     render();
   };
