@@ -4,6 +4,9 @@ A single-page, static, in-browser QA test-run shell. No backend, no build
 step, no database — a static single-page app (`index.html` plus `css/` and
 `js/`), hosted on GitHub Pages, that a tester opens in a browser tab.
 
+See [FEATURES.md](FEATURES.md) for the full, maintained catalog of what the
+app does — update it whenever a feature is added or changed.
+
 ## What this is
 
 A dev writes a set of test cases as a JSON file and sends it to QA. QA opens
@@ -53,6 +56,7 @@ Copy and Download actions.
 | `sample.json` | Demo test-case data, in the exact import schema, so the app has something to show without a real handoff file. Only offered when `config.json`'s `showSample` is `true`. |
 | `config.json` | `{ "showSample": boolean }`. Toggles whether the empty state offers a "Load sample data" option. Read defensively — if this file is missing or invalid, the app just behaves as `showSample: false`. |
 | `.github/workflows/pages.yml` | Deploys the repo root to GitHub Pages on every push to `main` (via `actions/upload-pages-artifact` + `actions/deploy-pages` — no build step). |
+| `FEATURES.md` | Maintained catalog of every feature the app has — update it alongside any feature change. |
 
 No build step: GitHub Pages serves these static files as-is. The only external script is `html2pdf.js` from cdnjs (used by **Export → Download PDF**).
 

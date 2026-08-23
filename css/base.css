@@ -228,9 +228,12 @@
     padding:10px 12px;
     cursor:pointer;
     transition:all 0.2s ease;
-    text-align:left;
+    text-align:center;
     width:100%;
-    display:block;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
   }
   .stat-tile:hover{
     background:var(--hover-bg);
@@ -889,10 +892,17 @@
     width:100%;
     padding:20px;
   }
+  .modal-box--closable{ position:relative; }
+  .modal-close-btn{
+    position:absolute;
+    top:12px;
+    right:12px;
+  }
   .modal-box h2{
     margin:0 0 8px;
     font-size:16px;
     color:var(--ink);
+    padding-right:28px;
   }
   .modal-box p{
     margin:0 0 18px;
@@ -903,6 +913,51 @@
     display:flex;
     justify-content:flex-end;
     gap:8px;
+  }
+
+  /* Import-replace confirm dialog swaps the default No/Yes row for an
+     Export (dropdown) / Discard row — both actions equal-width. Reset-all
+     and other confirmModalOpen() callers keep the default row (see the
+     [hidden] override below: without it, .modal-actions{display:flex}
+     would beat the native [hidden] rule since both are equal-specificity
+     author/UA rules). */
+  .modal-actions[hidden]{ display:none; }
+  .modal-actions--split{ gap:10px; }
+  .modal-actions--split .btn,
+  .modal-actions--split .confirm-export-wrap{ flex:1 1 0; }
+  .modal-actions--split .btn{ justify-content:center; }
+  .confirm-export-wrap{ position:relative; }
+  .confirm-export-wrap .btn{ width:100%; justify-content:center; }
+  .confirm-export-wrap .export-menu{ left:0; right:auto; width:100%; }
+
+  /* ---------- Drag-and-drop JSON overlay ---------- */
+  .dropzone-overlay{
+    position:fixed;
+    inset:0;
+    z-index:90;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    background:rgba(21,34,56,0.55);
+    pointer-events:none;
+  }
+  .dropzone-overlay.show{ display:flex; }
+  .dropzone-box{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+    padding:40px 56px;
+    border:2px dashed var(--accent);
+    border-radius:12px;
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .dropzone-box .icon-lg{ color:var(--primary); }
+  .dropzone-box p{
+    margin:0;
+    font-size:15px;
+    font-weight:600;
   }
 
   /* ---------- Report modal ---------- */
