@@ -50,14 +50,32 @@ function escapeHtml(str){
 const root = document.getElementById('report-root');
 const jumpModuleSel = document.getElementById('jump-module');
 const jumpSubmoduleSel = document.getElementById('jump-submodule');
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear-btn');
 const pinnedBar = document.getElementById('pinned-bar');
 const pinnedItems = document.getElementById('pinned-items');
 const docTitleEl = document.getElementById('doc-title');
 let currentFilter = 'all';
+// Lowercased, trimmed live-search query — matched against each test row's
+// own text (see applyFilter). Combines with currentFilter (both must
+// match); independent of it otherwise.
+let searchQuery = '';
 let openMenuKey = null;
 let showSample = false;
 let suiteLoaded = false;
 let docTitle = docTitleEl.textContent;
+// True whenever the in-memory suite has changes not yet covered by a
+// Download JSON export — drives the beforeunload warning below so it only
+// fires for genuinely unsaved work, not on every reload after a suite has
+// already been exported.
+let dirty = false;
+// One-level undo for Reset all: a snapshot of every test's status/note
+// taken right before the most recent reset, keyed by id (stable for the
+// life of the loaded suite). Null when there's nothing to undo — no reset
+// yet this session, undo already used, or a new suite has been imported
+// since (cleared in doImport() so a stale snapshot can't "resurrect" data
+// into the wrong suite).
+let lastResetSnapshot = null;
 
 /* Builds the numbered module/sub-module/test-row structure from a plain
    { title, subModules: [{ title, tests: [{ text, status?, note? }] }] }
@@ -123,17 +141,28 @@ function jumpTo(id){
   });
 }
 
+// Clears the live-search query (input value + state + clear-button
+// visibility) without touching currentFilter or re-rendering — callers
+// follow up with whatever they already do (jumpTo()/render()/applyFilter()).
+function clearSearch(){
+  searchQuery = '';
+  searchInput.value = '';
+  searchClearBtn.hidden = true;
+}
+
 jumpModuleSel.addEventListener('change', () => {
   const modNum = jumpModuleSel.value;
   jumpSubmoduleSel.innerHTML = '<option value="">Jump to sub-module…</option>';
-  
+
   if (!modNum){
     jumpSubmoduleSel.style.display = 'none';
     return;
   }
 
-  // Reset filter to 'all' when jump nav is used
+  // Reset filter/search when jump nav is used — either could otherwise hide
+  // the module being jumped to.
   currentFilter = 'all';
+  clearSearch();
   document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
 
   const mod = modules.find(m => m.num === modNum);
@@ -153,11 +182,24 @@ jumpModuleSel.addEventListener('change', () => {
 
 jumpSubmoduleSel.addEventListener('change', () => {
   if (jumpSubmoduleSel.value){
-    // Reset filter to 'all' when jump nav is used
+    // Reset filter/search when jump nav is used — see the module handler above.
     currentFilter = 'all';
+    clearSearch();
     document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     jumpTo(`sub-${jumpSubmoduleSel.value}`);
   }
+});
+
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value.trim().toLowerCase();
+  searchClearBtn.hidden = !searchQuery;
+  applyFilter();
+});
+
+searchClearBtn.addEventListener('click', () => {
+  clearSearch();
+  applyFilter();
+  searchInput.focus();
 });
 
 function toggleCollapseModule(modNum){
@@ -223,9 +265,15 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeAllMenus();
 });
 
-/* Builds the ellipsis-vertical "more options" button + its Pin/Lock dropdown,
-   shared by module headers and sub-module headers. */
-function buildMenuWrap(kind, num, pinned, locked, onPin, onLock){
+/* Builds the ellipsis-vertical "more options" button + its Pin/Lock/bulk-mark
+   dropdown, shared by module headers and sub-module headers.
+   bulk = { locked, label, tests } — locked: whether status-editing is
+   blocked here (own lock, or a parent module's for a sub-module — same
+   rule renderTestRow() already applies to individual rows); label: the
+   module/sub-module title, used in the bulk-mark confirm dialog; tests:
+   the flat test array the bulk actions apply to (a sub-module's own, or
+   every test across a module's sub-modules). */
+function buildMenuWrap(kind, num, pinned, locked, onPin, onLock, bulk){
   const key = `${kind}-${num}`;
   const wrap = document.createElement('div');
   wrap.className = 'menu-wrap';
@@ -255,6 +303,33 @@ function buildMenuWrap(kind, num, pinned, locked, onPin, onLock){
 
   menu.appendChild(pinItem);
   menu.appendChild(lockItem);
+
+  const divider = document.createElement('div');
+  divider.className = 'dropdown-divider';
+  menu.appendChild(divider);
+
+  // Disabled when status-editing is blocked here (locked) or there's
+  // nothing to mark (empty scope) — mirrors the disabled state individual
+  // status <select>s already get under the same conditions.
+  const bulkDisabled = bulk.locked || bulk.tests.length === 0;
+  [
+    { status: 'pass', label: 'Mark all Pass' },
+    { status: 'fail', label: 'Mark all Fail' },
+    { status: 'pending', label: 'Mark all Pending' }
+  ].forEach(({ status, label }) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'dropdown-item';
+    item.disabled = bulkDisabled;
+    item.innerHTML = `<span class="status-dot ${status}"></span><span>${label}</span>`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (bulkDisabled) return;
+      closeAllMenus();
+      bulkMarkTests(bulk.tests, status, bulk.label);
+    });
+    menu.appendChild(item);
+  });
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -334,6 +409,44 @@ const FILTER_LABELS = {
   fail: 'Failed'
 };
 
+// Distinct from FILTER_LABELS above (singular/imperative form, for bulk
+// mark actions and their confirm-dialog copy — "Mark all Pass", not
+// "Passed").
+const STATUS_LABELS = {
+  pass: 'Pass',
+  fail: 'Fail',
+  pending: 'Pending'
+};
+
+/* Sets `targetStatus` on every test in `tests` (a module's or sub-module's
+   full test list). Prompts for confirmation first only when doing so would
+   actually overwrite existing Pass/Fail results — marking still-Pending
+   tests, or re-marking tests already at the target status, is purely
+   additive and doesn't need one. `scopeLabel` (a module/sub-module title)
+   goes straight into confirmModalOpen()'s message, which sets it via
+   textContent, so no HTML-escaping is needed here. */
+function bulkMarkTests(tests, targetStatus, scopeLabel){
+  const overwriteCount = tests.filter(t => t.status !== 'pending' && t.status !== targetStatus).length;
+
+  const apply = () => {
+    tests.forEach(t => { t.status = targetStatus; });
+    dirty = true;
+    render();
+  };
+
+  if (overwriteCount === 0){
+    apply();
+    return;
+  }
+
+  const statusLabel = STATUS_LABELS[targetStatus];
+  confirmModalOpen(
+    `Mark all as ${statusLabel}?`,
+    `This overwrites ${overwriteCount} already-marked test${overwriteCount === 1 ? '' : 's'} in "${scopeLabel}" to ${statusLabel}. This can't be undone.`,
+    apply
+  );
+}
+
 function buildEmptyState({ variant, iconName, title, hint, actionsHtml }){
   return `
     <div class="empty-state empty-state--${variant}" role="status">
@@ -384,7 +497,8 @@ function renderEmptySuite(){
 function updateFilterEmptyState(){
   let el = document.getElementById('filter-empty');
   const anyVisible = !!root.querySelector('.module:not(.filtered-out)');
-  const show = suiteLoaded && allTests().length > 0 && currentFilter !== 'all' && !anyVisible;
+  const filterActive = currentFilter !== 'all' || !!searchQuery;
+  const show = suiteLoaded && allTests().length > 0 && filterActive && !anyVisible;
 
   if (!show){
     if (el){
@@ -400,19 +514,37 @@ function updateFilterEmptyState(){
     root.appendChild(el);
   }
 
-  const label = FILTER_LABELS[currentFilter] || currentFilter;
+  // Search and the status filter (KPI cards) are independent and both must
+  // match — build the empty-state message for whichever combination is
+  // actually active, so "clear the filter" doesn't get suggested when
+  // there's no filter, only a search, and vice versa.
+  const statusLabel = FILTER_LABELS[currentFilter] || currentFilter;
+  const queryText = escapeHtml(searchInput.value.trim());
+  let title, hint;
+  if (searchQuery && currentFilter !== 'all'){
+    title = `No ${statusLabel.toLowerCase()} cases match “${queryText}”`;
+    hint = `Nothing matches both the <strong>${statusLabel}</strong> filter and your search. Clear either one to see more cases.`;
+  } else if (searchQuery){
+    title = `No cases match “${queryText}”`;
+    hint = `Nothing in the loaded suite matches your search. Clear it to see the full suite.`;
+  } else {
+    title = `No ${statusLabel.toLowerCase()} cases`;
+    hint = `Nothing matches the <strong>${statusLabel}</strong> filter right now. Clear the filter to see the full suite, or keep working — matching cases will appear here as statuses change.`;
+  }
+
   el.hidden = false;
   el.innerHTML = buildEmptyState({
     variant: 'filter',
     iconName: 'search',
-    title: `No ${label.toLowerCase()} cases`,
-    hint: `Nothing matches the <strong>${label}</strong> filter right now. Clear the filter to see the full suite, or keep working — matching cases will appear here as statuses change.`,
+    title,
+    hint,
     actionsHtml: `<button class="btn primary" id="clear-filter-btn" type="button">Show all cases</button>`
   });
   const clearBtn = document.getElementById('clear-filter-btn');
   if (clearBtn){
     clearBtn.addEventListener('click', () => {
       currentFilter = 'all';
+      clearSearch();
       document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
       applyFilter();
     });
@@ -452,13 +584,15 @@ function render(){
       <span class="chevron-icon">${icon('chevronDown')}</span>
       <span class="module-num">${mod.num}.</span>
       <span class="module-title">${escapeHtml(mod.title)}</span>
+      ${mod.pinned ? `<span class="pin-badge" title="Pinned">${icon('pin', 'icon-sm')}</span>` : ''}
       ${mod.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
     `;
 
     const headMeta = document.createElement('div');
     headMeta.className = 'module-meta';
     headMeta.appendChild(buildMenuWrap('mod', mod.num, mod.pinned, mod.locked,
-      () => togglePinModule(mod.num), () => toggleLockModule(mod.num)));
+      () => togglePinModule(mod.num), () => toggleLockModule(mod.num),
+      { locked: mod.locked, label: mod.title, tests: mod.subModules.flatMap(sm => sm.tests) }));
 
     const headProgress = document.createElement('div');
     headProgress.className = 'module-head-progress';
@@ -494,13 +628,15 @@ function render(){
         <span class="chevron-icon">${icon('chevronDown')}</span>
         <span class="sub-num">${sm.num}.</span>
         <span class="sub-title-text">${escapeHtml(sm.title)}</span>
+        ${sm.pinned ? `<span class="pin-badge" title="Pinned">${icon('pin', 'icon-sm')}</span>` : ''}
         ${sm.locked ? `<span class="lock-badge" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}
       `;
 
       const smMeta = document.createElement('div');
       smMeta.className = 'submodule-meta';
       smMeta.appendChild(buildMenuWrap('sub', sm.num, sm.pinned, sm.locked,
-        () => togglePinSub(sm.num), () => toggleLockSub(sm.num)));
+        () => togglePinSub(sm.num), () => toggleLockSub(sm.num),
+        { locked: mod.locked || sm.locked, label: sm.title, tests: sm.tests }));
 
       const smProgress = document.createElement('div');
       smProgress.className = 'submodule-head-progress';
@@ -544,6 +680,7 @@ function renderTestRow(t, locked){
   const main = document.createElement('div');
   main.className = 'test-main';
   main.innerHTML = `
+    ${locked ? `<span class="row-lock-badge" title="Locked — status/note can't be edited">${icon('lock', 'icon-sm')}</span>` : ''}
     <span class="status-dot ${t.status}"></span>
     <span class="test-id">${t.id}.</span>
     <span class="test-text">${escapeHtml(t.text)}</span>
@@ -578,6 +715,7 @@ function renderTestRow(t, locked){
     select.dataset.val = t.status;
     selectWrap.dataset.val = t.status;
     dot.className = 'status-dot ' + t.status;
+    dirty = true;
     updateStats();
   });
 
@@ -587,6 +725,7 @@ function renderTestRow(t, locked){
 
   textarea.addEventListener('input', () => {
     t.note = textarea.value;
+    dirty = true;
     noteToggle.classList.toggle('has-note', t.note.trim().length > 0);
   });
 
@@ -649,15 +788,21 @@ function updateStats(){
 }
 
 function applyFilter(){
+  // Status filter (KPI cards) and live search are independent — a row has
+  // to satisfy both to stay visible.
+  const filterActive = currentFilter !== 'all' || !!searchQuery;
+
   document.querySelectorAll('.test-row').forEach(row => {
-    const show = currentFilter === 'all' || row.dataset.status === currentFilter;
-    row.classList.toggle('filtered-out', !show);
+    const statusMatch = currentFilter === 'all' || row.dataset.status === currentFilter;
+    const searchMatch = !searchQuery || row.querySelector('.test-text').textContent.toLowerCase().includes(searchQuery);
+    row.classList.toggle('filtered-out', !(statusMatch && searchMatch));
   });
 
   // Hide sub-module blocks that have no visible test rows left. While a
-  // status filter is active, auto-expand sub-modules with visible matches
-  // (otherwise the default-collapsed state would hide everything the filter
-  // is meant to surface); restore the saved collapsed state once back to "All".
+  // filter (status and/or search) is active, auto-expand sub-modules with
+  // visible matches (otherwise the default-collapsed state would hide
+  // everything the filter is meant to surface); restore the saved
+  // collapsed state once back to no filter at all.
   document.querySelectorAll('.submodule').forEach(smEl => {
     const hasVisible = !!smEl.querySelector('.test-row:not(.filtered-out)');
     smEl.classList.toggle('filtered-out', !hasVisible);
@@ -666,7 +811,7 @@ function applyFilter(){
     const parentMod = modules.find(m => m.subModules.some(s => s.num === subNum));
     const sm = parentMod && parentMod.subModules.find(s => s.num === subNum);
 
-    if (currentFilter !== 'all'){
+    if (filterActive){
       if (hasVisible && sm && !sm.locked) smEl.classList.remove('collapsed');
     } else {
       smEl.classList.toggle('collapsed', !!(sm && sm.collapsed));
@@ -681,7 +826,7 @@ function applyFilter(){
 
     const modNum = modEl.id.replace('mod-', '');
     const mod = modules.find(m => m.num === modNum);
-    if (currentFilter !== 'all'){
+    if (filterActive){
       if (hasVisible && mod && !mod.locked) modEl.classList.remove('collapsed');
     } else {
       modEl.classList.toggle('collapsed', !!(mod && mod.collapsed));
@@ -778,6 +923,7 @@ exportJsonBtn.addEventListener('click', () => closeMobileNav());
 exportReportBtn.addEventListener('click', () => closeMobileNav());
 
 function downloadJson(){
+  dirty = false;
   const payload = {
     docTitle: docTitle,
     modules: modules.map(mod => ({
@@ -865,12 +1011,57 @@ exportReportBtn.addEventListener('click', (e) => {
 
 /* ---------- Toast notification ---------- */
 const toast = document.getElementById('toast');
+const toastMsg = document.getElementById('toast-msg');
+const toastActionBtn = document.getElementById('toast-action');
 let toastTimeout = null;
+let toastActionHandler = null;
 
-function showToast(message, duration = 3000){
-  toast.textContent = message;
+/* `action`, when given, is { label, onAction } — shows a clickable action
+   button next to the message (e.g. "Undo") instead of the plain text-only
+   toast. Clicking it (or the toast auto-dismissing) both clear the action
+   the same way, so a stale handler can't fire after the toast is gone. */
+function showToast(message, duration = 3000, action){
+  toastMsg.textContent = message;
+
+  // Sit just below whatever header chrome is actually visible right now,
+  // instead of a fixed viewport offset — the header's height varies
+  // (suite loaded or not, scrolled past the KPI block or not, mobile
+  // hamburger vs. desktop action row), and a fixed offset ends up
+  // overlapping real content/controls in several of those states.
+  // .head-chrome is sticky-pinned at the top, so its bottom edge is
+  // always where the title/actions row actually ends; .head-metrics
+  // (KPI cards/progress/search/jump nav) isn't sticky, so its bottom
+  // only matters while it's still scrolled into view — once the page
+  // scrolls past it, its rect goes non-positive and chromeBottom (always
+  // positive) wins instead. When no suite is loaded .head-metrics is
+  // display:none, giving a zero rect that never wins over chromeBottom.
+  const headChrome = document.querySelector('.head-chrome');
+  const headMetrics = document.querySelector('.head-metrics');
+  if (headChrome){
+    const chromeBottom = headChrome.getBoundingClientRect().bottom;
+    const metricsBottom = headMetrics ? headMetrics.getBoundingClientRect().bottom : 0;
+    toast.style.top = (Math.max(chromeBottom, metricsBottom) + 12) + 'px';
+  }
+
+  if (toastActionHandler){
+    toastActionBtn.removeEventListener('click', toastActionHandler);
+    toastActionHandler = null;
+  }
+  if (action){
+    toastActionBtn.textContent = action.label;
+    toastActionBtn.hidden = false;
+    toastActionHandler = () => {
+      action.onAction();
+      toast.classList.remove('show');
+      if (toastTimeout) clearTimeout(toastTimeout);
+    };
+    toastActionBtn.addEventListener('click', toastActionHandler);
+  } else {
+    toastActionBtn.hidden = true;
+  }
+
   toast.classList.add('show');
-  
+
   if (toastTimeout) clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => {
     toast.classList.remove('show');
@@ -886,14 +1077,6 @@ const reportDownloadBtn = document.getElementById('report-download-btn');
 let latestReportMarkdown = '';
 let latestReportPlainText = '';
 let latestReportClipboardHtml = '';
-
-function escapeHtml(str){
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /* Which "Included test cases" checkboxes are on — set from the report
    settings panel (cog button in the report modal header). "all" and the
@@ -1393,14 +1576,29 @@ document.getElementById('confirm-export-report-btn').addEventListener('click', (
   openReportModal();
 });
 
-/* Reset all — with confirmation */
+/* Reset all — with confirmation, and a one-level Undo via the toast. */
+function undoReset(){
+  if (!lastResetSnapshot) return;
+  const byId = new Map(lastResetSnapshot.map(s => [s.id, s]));
+  allTests().forEach(t => {
+    const prev = byId.get(t.id);
+    if (prev){ t.status = prev.status; t.note = prev.note; }
+  });
+  lastResetSnapshot = null;
+  dirty = true; // can't cheaply tell if this exactly matches the last export — safe default
+  render();
+}
+
 document.getElementById('reset-btn').addEventListener('click', () => {
   confirmModalOpen(
     'Reset all test cases?',
-    "This sets every test back to Pending and clears all notes. This can't be undone.",
+    'This sets every test back to Pending and clears all notes. You can undo it right after.',
     () => {
+      lastResetSnapshot = allTests().map(t => ({ id: t.id, status: t.status, note: t.note }));
       allTests().forEach(t => { t.status = 'pending'; t.note = ''; });
+      dirty = false; // reset returns to the original imported (still-pending) state
       render();
+      showToast('All test cases reset.', 6000, { label: 'Undo', onAction: undoReset });
     }
   );
 });
@@ -1502,7 +1700,10 @@ function applyImport(parsed){
     }
     modules = buildModules(parsed.modules);
     suiteLoaded = true;
+    dirty = false; // freshly imported suite has no unsaved progress yet
     currentFilter = 'all';
+    clearSearch(); // a leftover query from the previous suite shouldn't silently hide the new one
+    lastResetSnapshot = null; // a stale snapshot from the previous suite must not resurrect into this one
     document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     render();
   };
@@ -1527,23 +1728,87 @@ function loadSample(){
     .catch(() => alert('Could not load sample.json.'));
 }
 
-/* Warn before closing/reloading the tab while a suite is loaded — there is no
-   persistence layer by design (see README), so this is the only guard
-   against losing in-progress work before Export. */
+/* Warn before closing/reloading the tab while there is unsaved progress —
+   there is no persistence layer by design (see README), so this is the only
+   guard against losing in-progress work before Export. Gated on `dirty`
+   (not just suiteLoaded) so it doesn't nag on every reload after a suite has
+   already been exported via Download JSON. */
 window.addEventListener('beforeunload', (e) => {
-  if (suiteLoaded){
+  if (suiteLoaded && dirty){
     e.preventDefault();
     e.returnValue = '';
   }
 });
 
-render();
+/* ---------- Collapse KPI/progress/jump-nav while scrolling down ----------
+   The sticky header chrome (title + actions) stays put, but the metrics
+   block underneath it (stat tiles, progress bar, jump nav, pinned bar) can
+   eat a lot of vertical space on a short/landscape screen. Hide it while
+   actively scrolling down through the list, bring it back on scroll-up or
+   near the top — same pattern as most mobile browser chrome. Only applies
+   once a suite is loaded (the block is hidden entirely before that via the
+   body:not(.suite-loaded) rule already, independent of this). */
+const SCROLL_COLLAPSE_THRESHOLD = 80;
+let lastScrollY = window.scrollY;
+// Time-based throttle (not requestAnimationFrame): rAF callbacks are
+// deprioritized/suspended for backgrounded or non-visible tabs in most
+// browsers, which would otherwise wedge this — the "wait for the next
+// frame" flag never clears if that frame never comes, silently freezing
+// the collapse/expand behavior for the rest of the session.
+const SCROLL_COLLAPSE_THROTTLE_MS = 100;
+let scrollCollapseThrottled = false;
 
-// Set initial active state for Total KPI card
-document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
+// Collapsing/expanding .head-metrics shortens/lengthens the whole document
+// (its max-height transition), which can shrink the page below the current
+// scroll position — the browser then clamps window.scrollY down on its own,
+// firing a further 'scroll' event that looks exactly like the user
+// scrolling up. Without a cooldown, that self-inflicted event immediately
+// un-collapses what we just collapsed (confirmed live: collapsing at
+// scrollY=400 clamps to ~388 mid-transition, an 11-12px drop that reads as
+// "scrolled up"). Ignore scroll events for a beat after our own toggle —
+// long enough for the .3s CSS transition's clamp to settle — rather than
+// trying to distinguish a genuine user scroll-up from our own layout shift.
+const SCROLL_COLLAPSE_COOLDOWN_MS = 400;
+let lastToggleAt = 0;
 
-fetch('config.json', { cache: 'no-store' })
-  .then(res => (res.ok ? res.json() : {}))
-  .then(cfg => { showSample = !!(cfg && cfg.showSample); })
-  .catch(() => { showSample = false; })
-  .finally(() => { render(); });
+function updateScrollCollapse(){
+  const y = window.scrollY;
+  if (Date.now() - lastToggleAt < SCROLL_COLLAPSE_COOLDOWN_MS){
+    lastScrollY = y;
+    return;
+  }
+  const delta = y - lastScrollY;
+  const isCollapsed = document.body.classList.contains('scroll-collapsed');
+  if (suiteLoaded && delta > 0 && y > SCROLL_COLLAPSE_THRESHOLD && !isCollapsed){
+    document.body.classList.add('scroll-collapsed');
+    lastToggleAt = Date.now();
+  } else if ((!suiteLoaded || y <= SCROLL_COLLAPSE_THRESHOLD || delta < 0) && isCollapsed){
+    document.body.classList.remove('scroll-collapsed');
+    lastToggleAt = Date.now();
+  }
+  lastScrollY = y;
+}
+
+window.addEventListener('scroll', () => {
+  if (scrollCollapseThrottled) return;
+  scrollCollapseThrottled = true;
+  setTimeout(() => { scrollCollapseThrottled = false; }, SCROLL_COLLAPSE_THROTTLE_MS);
+  updateScrollCollapse();
+}, { passive: true });
+
+// Resolve config.json (showSample) before the first render, rather than
+// rendering once and re-rendering when it resolves — avoids a visible
+// pop-in of the "Load sample data" button on the empty state and a
+// redundant full DOM rebuild on every load.
+(async function init(){
+  try {
+    const res = await fetch('config.json', { cache: 'no-store' });
+    const cfg = res.ok ? await res.json() : {};
+    showSample = !!(cfg && cfg.showSample);
+  } catch (e) {
+    showSample = false;
+  }
+  render();
+  // Set initial active state for Total KPI card
+  document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
+})();

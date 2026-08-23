@@ -79,11 +79,6 @@
   .icon-md{ width:16px; height:16px; }
 
   /* ---------- Header / Dashboard ---------- */
-  header.report-head{
-    background:transparent;
-    border:none;
-    box-shadow:none;
-  }
   .head-chrome{
     position:sticky;
     top:0;
@@ -113,6 +108,18 @@
   .head-metrics{
     background:var(--surface);
     border-bottom:1px solid var(--border);
+    max-height:640px;
+    overflow:hidden;
+    transition:max-height .3s ease, opacity .2s ease, border-color .2s ease;
+  }
+  /* Collapsed while actively scrolling down through the list (see the
+     scroll listener in app.js) — gives short/landscape screens their
+     vertical space back without losing the sticky title/actions row. */
+  body.scroll-collapsed .head-metrics{
+    max-height:0;
+    opacity:0;
+    border-color:transparent;
+    pointer-events:none;
   }
   .head-title-block{
     min-width:0;
@@ -212,7 +219,11 @@
     color:var(--fail);
   }
   button.btn.danger:hover{ background:var(--fail-bg); }
-  button.btn[disabled]{ opacity:.6; cursor:progress; }
+  /* cursor:progress reads as "something is loading, wait" — wrong for a
+     control that's simply unavailable right now (no suite loaded yet).
+     not-allowed is the correct semantic cursor for that; PDF export's own
+     'Generating…' state sets its own cursor separately, not via this rule. */
+  button.btn[disabled]{ opacity:.6; cursor:not-allowed; }
 
   /* Stat tiles */
   .stat-grid{
@@ -307,34 +318,7 @@
   .progress-seg.pass{ background:var(--pass); height:100%; transition:width .25s ease; }
   .progress-seg.fail{ background:var(--fail); height:100%; transition:width .25s ease; }
 
-  /* Filter + jump nav */
-  .toolbar{
-    grid-column:1 / -1;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    flex-wrap:wrap;
-    padding-top:12px;
-    margin-top:12px;
-    border-top:1px solid var(--border);
-  }
-  .filter-group{ display:flex; gap:6px; flex-wrap:wrap; }
-  .filter-btn{
-    font-family:var(--mono);
-    font-size:11.5px;
-    padding:5px 10px;
-    border-radius:5px;
-    border:1px solid var(--border-strong);
-    background:var(--surface);
-    color:var(--ink-soft);
-    cursor:pointer;
-  }
-  .filter-btn.active{
-    background:var(--primary);
-    border-color:var(--primary);
-    color:#fff;
-  }
+  /* Jump nav */
   .jump-group{
     display:flex;
     gap:8px;
@@ -363,6 +347,61 @@
     max-width:220px;
   }
   select.jump-select:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  /* Search box — same row as the jump-nav selects (.jump-group), takes the
+     flexible remaining width there while the selects stay their own size;
+     stacks full-width below the mobile breakpoint via responsive.css. */
+  .search-wrap{
+    position:relative;
+    display:flex;
+    align-items:center;
+    flex:1 1 200px;
+    min-width:160px;
+    max-width:360px;
+  }
+  .search-icon{
+    position:absolute;
+    left:10px;
+    top:50%;
+    transform:translateY(-50%);
+    color:var(--ink-faint);
+    pointer-events:none;
+  }
+  .search-input{
+    width:100%;
+    font-family:var(--sans);
+    font-size:13px;
+    padding:6px 30px 6px 30px;
+    border-radius:6px;
+    border:1px solid var(--border-strong);
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .search-input::placeholder{ color:var(--ink-faint); }
+  .search-input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  /* Hide the native search-input decorations (clear "x", magnifier) so our
+     own icon + clear button are the only ones shown, consistently across
+     browsers. */
+  .search-input::-webkit-search-cancel-button,
+  .search-input::-webkit-search-decoration{ -webkit-appearance:none; appearance:none; }
+  .search-clear-btn{
+    position:absolute;
+    right:4px;
+    top:50%;
+    transform:translateY(-50%);
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:24px;
+    height:24px;
+    border-radius:5px;
+    border:none;
+    background:none;
+    color:var(--ink-faint);
+    cursor:pointer;
+  }
+  .search-clear-btn:hover{ background:var(--pending-bg); color:var(--ink-soft); }
+  .search-clear-btn[hidden]{ display:none; }
 
   /* Pinned bar */
   .pinned-bar{
@@ -544,7 +583,23 @@
      menu inside is open, and outrank the next module card while doing so. */
   .module.menu-open{ overflow:visible; position:relative; z-index:40; }
 
-  .lock-badge{ display:inline-flex; color:var(--primary); flex-shrink:0; }
+  /* Pin/lock badges next to a module/sub-module title: red (var(--fail),
+     theme-aware) and drawn bolder/bigger than the default 12px icon so
+     they actually read at a glance instead of blending into the title
+     row — the icon shape (pin vs. padlock) is what tells pinned and
+     locked apart now that both use the same color. */
+  .lock-badge,
+  .pin-badge{
+    display:inline-flex;
+    color:var(--fail);
+    flex-shrink:0;
+  }
+  .lock-badge .icon,
+  .pin-badge .icon{
+    width:15px;
+    height:15px;
+    stroke-width:2.75;
+  }
 
   .submodule{
     padding:0 18px;
@@ -644,7 +699,7 @@
     position:absolute;
     top:calc(100% + 4px);
     right:0;
-    min-width:150px;
+    min-width:180px;
     background:var(--surface);
     border:1px solid var(--border-strong);
     border-radius:8px;
@@ -652,6 +707,13 @@
     padding:4px;
     display:none;
     z-index:30;
+  }
+  /* Separates Pin/Lock from the bulk-mark items below them in the
+     module/sub-module "more options" menu. */
+  .dropdown-divider{
+    height:1px;
+    background:var(--border);
+    margin:4px 6px;
   }
   .dropdown-menu.open{ display:block; }
   .dropdown-item{
@@ -672,6 +734,15 @@
   }
   .dropdown-item:hover{ background:var(--hover-bg); }
   .dropdown-item .icon{ color:var(--ink-soft); }
+  /* Bulk-mark items (and any other dropdown-item) disabled while locked or
+     with nothing in scope to mark — distinct cursor/opacity from the
+     export-menu's own [disabled] rule below, which means something else
+     (a PDF actively generating), not "unavailable". */
+  .dropdown-item:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+  }
+  .dropdown-item:disabled:hover{ background:none; }
   .export-wrap{ position:relative; flex-shrink:0; }
   .export-menu{
     min-width:168px;
@@ -691,7 +762,26 @@
   .test-row[data-status="fail"]{ background:linear-gradient(90deg, var(--fail-bg), transparent 40%); }
   .test-row[data-status="pass"]{ background:linear-gradient(90deg, var(--pass-bg), transparent 40%); }
   .test-row.filtered-out{ display:none; }
-  .test-row.locked{ opacity:.65; }
+  /* Locked rows get a border + a dedicated lock icon (row-lock-badge, added
+     by renderTestRow) on top of the reduced opacity — a status/pass-fail
+     color cue alone isn't enough of a "you can't edit this" signal, and the
+     module/sub-module header's lock badge scrolls out of view in a long
+     list. */
+  .test-row.locked{
+    opacity:.72;
+    border-left:3px solid var(--border-strong);
+    padding-left:1px;
+  }
+  .row-lock-badge{
+    display:inline-flex;
+    color:var(--fail);
+    flex-shrink:0;
+  }
+  .row-lock-badge .icon{
+    width:15px;
+    height:15px;
+    stroke-width:2.75;
+  }
 
   .test-main{
     display:flex;
@@ -871,9 +961,7 @@
 
   /* Applied while html2pdf is capturing the page */
   body.generating-pdf .head-chrome{ position:static; box-shadow:none; }
-  body.generating-pdf header.report-head{ box-shadow:none; }
   body.generating-pdf .head-actions,
-  body.generating-pdf .toolbar,
   body.generating-pdf .nav-toggle,
   body.generating-pdf .note-toggle,
   body.generating-pdf .chevron-icon,
@@ -886,8 +974,7 @@
   body.generating-pdf #filter-empty{ display:none !important; }
   body.generating-pdf .module{ box-shadow:none; break-inside:avoid; }
 
-  /* Hide KPI / filters / jump until a JSON suite is loaded */
-  body:not(.suite-loaded) .toolbar,
+  /* Hide KPI / jump nav until a JSON suite is loaded */
   body:not(.suite-loaded) .head-metrics{
     display:none !important;
   }
@@ -1184,12 +1271,12 @@
   /* ---------- Toast notification ---------- */
   .toast{
     position:fixed;
-    bottom:24px;
+    top:20px;
     left:50%;
-    transform:translateX(-50%) translateY(100px);
+    transform:translateX(-50%) translateY(-100px);
     background:var(--surface);
     color:var(--ink);
-    padding:14px 20px;
+    padding:12px 14px 12px 20px;
     border-radius:var(--radius);
     border:1px solid var(--border);
     box-shadow:var(--shadow);
@@ -1201,10 +1288,30 @@
     transition:transform 0.3s ease, opacity 0.3s ease;
     max-width:90%;
     width:auto;
-    text-align:center;
+    display:flex;
+    align-items:center;
+    gap:16px;
   }
   .toast.show{
     transform:translateX(-50%) translateY(0);
     opacity:1;
     pointer-events:auto;
   }
+  .toast-msg{ text-align:left; }
+  .toast-action{
+    flex-shrink:0;
+    appearance:none;
+    border:none;
+    background:none;
+    padding:6px 10px;
+    margin:-6px -4px -6px 0;
+    border-radius:6px;
+    font-family:var(--sans);
+    font-size:13px;
+    font-weight:700;
+    color:var(--accent);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .toast-action:hover{ background:var(--hover-bg); }
+  .toast-action[hidden]{ display:none; }

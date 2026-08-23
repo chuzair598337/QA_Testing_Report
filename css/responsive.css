@@ -101,27 +101,11 @@
   .progress-label {
     font-size: 11px;
   }
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    padding-top: 10px;
-    margin-top: 10px;
-  }
-  .filter-group {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-  .filter-btn {
-    text-align: center;
-    padding: 8px 4px;
-  }
   .jump-group {
     width: 100%;
   }
-  .jump-group .jump-select {
+  .jump-group .jump-select,
+  .jump-group .search-wrap {
     width: 100%;
     max-width: none;
   }
@@ -180,8 +164,45 @@
     padding-left: 0;
   }
   select.status-select,
-  .note-toggle {
+  .note-toggle,
+  .search-input {
     min-height: 36px;
+  }
+  .search-clear-btn {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Small tablets / large phones in the gap between the two tiers above and
+   below — the 900px tier already covers layout structure (hamburger nav,
+   wrapped test rows), this just tightens spacing/density a step further
+   before the 480px tier's more aggressive shrink. */
+@media (max-width: 680px) {
+  .head-inner {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .stat-grid {
+    gap: 6px;
+  }
+  .stat-tile {
+    padding: 7px 8px;
+  }
+  .module-head {
+    padding: 11px 12px;
+  }
+  .submodule {
+    padding: 0 10px;
+  }
+  .submodule-title {
+    padding: 10px 4px;
+  }
+  .test-controls {
+    gap: 8px;
+  }
+  .jump-group {
+    margin-top: 12px;
   }
 }
 
@@ -208,10 +229,6 @@
   }
   .stat-tile .stat-value {
     font-size: 16px;
-  }
-  .filter-btn {
-    font-size: 10.5px;
-    padding: 8px 2px;
   }
   .module {
     scroll-margin-top: 88px;
@@ -257,5 +274,48 @@
   }
   .report-case-list {
     padding-left: 1.2em;
+  }
+
+  /* Import-replace confirm dialog: Export (dropdown) + Discard Changes stop
+     fitting side by side once "Discard Changes" has to share ~150px with
+     the Export button — stack them full-width instead, and let the Export
+     dropdown open in normal flow (same pattern as the mobile hamburger
+     nav's export menu) rather than absolutely-positioned, so it pushes
+     Discard down instead of overlapping it. */
+  .modal-actions--split {
+    flex-direction: column;
+  }
+  /* Override the desktop flex:1 1 0 — in a column flex container that
+     stretches both items to equal, oversized heights; stacked rows should
+     just be full-width at their natural height instead. */
+  .modal-actions--split .btn,
+  .modal-actions--split .confirm-export-wrap {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  .confirm-export-wrap .export-menu {
+    position: static;
+    display: none;
+    width: 100%;
+    margin-top: 6px;
+    box-shadow: none;
+    border-color: var(--border);
+  }
+  .confirm-export-wrap .export-menu.open {
+    display: block;
+  }
+
+  /* Full-width toast (minor horizontal margin) instead of a centered pill —
+     a floating narrow pill reads cramped once it carries an action button
+     (e.g. the Reset-all Undo toast) on a phone-width screen. */
+  .toast {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    width: auto;
+    transform: translateY(-100px);
+  }
+  .toast.show {
+    transform: translateY(0);
   }
 }

@@ -13,6 +13,16 @@ change alters existing behavior, edit the bullet in place rather than
 appending a changelog entry; this file describes current behavior, not
 history (git log is the history).
 
+**Coming Soon Features** (second-to-last section) is the backlog — proposed
+features not built yet. When one gets implemented: move its bullet out of
+Coming Soon and into the section above it belongs to (rewritten as shipped
+behavior, not a proposal), and delete it from Coming Soon. Nothing lives in
+both places at once.
+
+**Not Required** (last section) is for features considered and explicitly
+declined — kept for reference so they don't get re-proposed, not expected to
+graduate the way Coming Soon bullets are.
+
 ## Core workflow
 
 - **Import** — loads a test-case JSON file (schema in README) into an
@@ -28,7 +38,11 @@ history (git log is the history).
 - **Export → Download PDF** — a printable snapshot of the current state
   (everything expanded, filters cleared) via `html2pdf.js`.
 - **Reset all** — sets every test back to Pending and clears all notes,
-  behind a confirmation prompt.
+  behind a confirmation prompt. One-level Undo: a toast with an Undo action
+  appears right after, restoring every status/note exactly as it was
+  before the reset. Cleared on the next import (a stale snapshot from a
+  different suite must not resurrect into the new one) and superseded by
+  the next reset (only the most recent one is undoable).
 - **In-memory only, no persistence** — no `localStorage`, no backend.
   Closing or reloading the tab without exporting first loses in-progress
   work by design. A `beforeunload` prompt warns before that happens while a
@@ -47,23 +61,48 @@ history (git log is the history).
 - **Collapse / expand** modules and sub-modules (collapsed by default);
   each header shows a mini pass/fail progress bar and `done/total` count.
 - **Pin / unpin** a module or sub-module to a pinned bar under the header
-  for quick access; click a pinned chip to jump to it.
+  for quick access; click a pinned chip to jump to it. A pinned module/
+  sub-module also carries its own pin icon next to its title (alongside
+  the lock icon when both apply), matching how locked ones are marked.
 - **Lock / unlock** a module or sub-module — locked cases can't have their
   status or note edited, and a locked card auto-collapses and can't be
-  expanded again until unlocked.
+  expanded again until unlocked. Since locked content only actually renders
+  expanded during PDF export (the live UI keeps it collapsed), each locked
+  test row also carries its own lock icon there, not just a border/opacity
+  dim, so it stays unambiguous in a printed/exported report.
+- **Pin/lock icons are bold and red** (`--fail`, theme-aware — same in
+  light and dark mode) and drawn larger than the default icon size, so
+  they actually read at a glance next to a title instead of blending in;
+  pin and lock share the same color now, told apart by icon shape (pin vs.
+  padlock) rather than color.
 - **Jump navigation** — dropdowns to jump straight to a module or
   sub-module, auto-expanding it and scrolling it into view.
+- **Bulk actions** — "Mark all Pass" / "Mark all Fail" / "Mark all Pending"
+  in the same Pin/Lock "more options" menu, at both module (every test
+  across all its sub-modules) and sub-module scope. Prompts for
+  confirmation only when it would overwrite existing Pass/Fail results
+  (naming how many); marking still-Pending tests, or re-marking tests
+  already at the target status, applies immediately. Disabled when the
+  module/sub-module is locked (or its parent module is, for a sub-module)
+  or has nothing to mark.
 
 ## Filtering
 
+- **Search box** — live, as-you-type text search across test case text, on
+  the same row as the jump-nav dropdowns (stacks full-width below it on
+  mobile). Independent of the KPI status filter — both apply together, a
+  case has to match whichever of the two are active. Has its own clear
+  button; clears automatically on a fresh import or when jump nav is used
+  (either could otherwise hide the thing being jumped to).
 - **KPI cards as filters** — the Total/Passed/Failed/Pending stat cards in
   the header are clickable; clicking one filters the list to that status
   (Total clears the filter). The active card is highlighted.
-- **Filtered-out empty state** — a filter that matches nothing shows its
-  own message with a "Show all cases" reset, instead of a blank list.
-- Modules/sub-modules with no matching case under the active filter are
-  hidden entirely; matching ones auto-expand while a filter is active and
-  restore their saved collapsed state once cleared.
+- **Filtered-out empty state** — search and/or the status filter matching
+  nothing shows its own message (worded for whichever combination is
+  active) with a "Show all cases" reset, instead of a blank list.
+- Modules/sub-modules with no matching case under an active filter (status
+  and/or search) are hidden entirely; matching ones auto-expand while a
+  filter is active and restore their saved collapsed state once cleared.
 
 ## Reporting (Export → Generate report)
 
@@ -91,10 +130,31 @@ history (git log is the history).
 - **Light / dark theme toggle**, defaulting to the OS/browser's
   `prefers-color-scheme` on first load; kept for the session.
 - **Responsive layout** — sticky header chrome; a mobile hamburger menu
-  (icon-only actions collapse into a dropdown panel) below the `900px`/
-  `480px` breakpoints; touch-friendly controls throughout.
+  (icon-only actions collapse into a dropdown panel) below the `900px`
+  breakpoint, with a further density tier at `680px` and the most
+  aggressive shrink at `480px`; touch-friendly controls throughout. The
+  import-replace confirm dialog's Export/Discard action row stacks
+  full-width below `480px` instead of squeezing side by side. The sticky
+  header (`.head-chrome`) is a top-level element, not nested inside a
+  tightly-fit wrapper — CSS sticky positioning is bounded by its
+  containing block's own extent, so nesting it inside a short wrapper
+  would let it detach and scroll away once that wrapper's box (shrunk
+  further by the KPI block collapsing on scroll) had fully scrolled past.
+- **Collapsible KPI/progress/jump-nav on scroll** — that block hides while
+  scrolling down through the test list and reappears on scroll-up or near
+  the top, giving short/landscape screens their vertical space back without
+  losing the sticky title/actions row above it.
 - **Toast notifications** for transient feedback (e.g. empty-report
-  gate) that auto-dismiss.
+  gate, Reset-all Undo) that auto-dismiss. Appears from the top, positioned
+  dynamically just below whatever header chrome is actually visible right
+  now (title/actions row, plus the KPI/search/jump block when it's still
+  in view) so it never covers real controls — not a fixed pixel offset.
+  Full-width (minor horizontal margin) below the `480px` breakpoint instead
+  of a centered pill.
+- **Disabled buttons show a "not-allowed" cursor**, not a loading spinner —
+  Export/Reset (and any other disabled `.btn`) previously used
+  `cursor:progress`, which reads as "something is loading" when the
+  control is simply unavailable (e.g. no suite loaded yet).
 - **Empty states** for: nothing imported yet, a JSON file with no test
   cases, and a filter with no matches — each with a relevant action to
   recover (Import, Load sample data, Show all cases).
@@ -108,3 +168,44 @@ history (git log is the history).
   break rendering or inject markup.
 - **No external dependency** beyond `html2pdf.js` (loaded from cdnjs, used
   only by Download PDF) — everything else is this repo's own HTML/CSS/JS.
+
+## Coming Soon Features
+
+Proposed, not yet built. See the note at the top of this file for how a
+bullet graduates out of this section once it ships.
+
+- **Ad-hoc multi-select bulk actions** — a checkbox-based selection across
+  arbitrary test rows (not just a whole module/sub-module) with its own
+  bulk-mark toolbar. Deferred v2 of the module/sub-module-level bulk
+  actions already shipped (see Organization & navigation) — needs a
+  checkbox column, a floating toolbar, and select-all, for a rarer use case
+  than "this whole section trivially passes."
+- **Keyboard shortcuts** — advance to the next pending test and mark it
+  Pass/Fail without leaving the keyboard, for faster work on large suites.
+- **Modal focus return** — closing the confirm or report modal returns
+  keyboard focus to whatever button opened it, instead of dropping it.
+- **Tab-title progress indicator** — the browser tab title reflects live
+  pass/fail counts (e.g. `3 failed · QA Testing Report`), so progress is
+  visible from a background tab without switching back.
+- **Duplicate-file / merge-progress path** — a second Import mode that loads
+  a base/revised suite and merges in status/notes from a previously
+  exported results file, matched by module+sub-module+test-text (not
+  position, since array order can change) rather than replacing everything.
+- **Changed-since-last-import diff** — when a revised suite is imported over
+  an existing one, highlight which modules/sub-modules/tests are new or
+  changed instead of a silent full replace.
+- **Per-test/module owner field** — an optional assignee so a suite split
+  across multiple QA testers can show who owns what.
+
+## Not Required
+
+Considered and explicitly declined, kept here so they don't get
+re-proposed. Unlike Coming Soon, nothing here is expected to graduate —
+move a bullet out only if a real need for it actually shows up later.
+
+- **Per-test screenshot/attachment** — attaching or linking an
+  image/screenshot to a test's note, beyond the existing free-text note
+  field. Decided not needed.
+- **Native print stylesheet independent of `html2pdf.js`** — a `@media
+  print` fallback for Download PDF that doesn't depend on `html2pdf.js`
+  loading from its CDN. Printing isn't a required capability for this app.
