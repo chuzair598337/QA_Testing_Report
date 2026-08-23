@@ -36,8 +36,17 @@
           "title": "RLS enforcement",
           "tests": [
             { "text": "A non-member cannot SELECT a report they don't belong to", "status": "pending", "note": "" },
-            { "text": "A viewer cannot UPDATE a tests row (status or note)", "status": "pending", "note": "" },
-            { "text": "An editor CAN update a tests row's status/note but not structural columns", "status": "pending", "note": "" }
+            { "text": "reports UPDATE (title/archived_at): owner allowed, editor denied, viewer denied", "status": "pending", "note": "" },
+            { "text": "reports: no DELETE policy exists at all (soft delete only) — a direct DELETE is rejected even for the owner", "status": "pending", "note": "" },
+            { "text": "report_members INSERT (invite): only via the invite-member Edge Function, which enforces owner-only itself after checking RLS; a direct client-side insert attempt by a non-owner is rejected", "status": "pending", "note": "" },
+            { "text": "report_members UPDATE (role change): owner allowed, editor denied, viewer denied", "status": "pending", "note": "" },
+            { "text": "report_members DELETE (remove member): owner allowed, editor denied, viewer denied", "status": "pending", "note": "" },
+            { "text": "modules/sub_modules INSERT/UPDATE/DELETE: owner allowed, editor denied, viewer denied", "status": "pending", "note": "" },
+            { "text": "tests INSERT/DELETE (structural, re-import only): owner allowed, editor denied, viewer denied", "status": "pending", "note": "" },
+            { "text": "tests UPDATE status/note: owner allowed, editor allowed, viewer denied", "status": "pending", "note": "" },
+            { "text": "tests UPDATE: editor attempting to change a structural column (sub_module_id/name/order_index) is rejected by the tests_update_scope trigger even though the row-level UPDATE policy allows editors", "status": "pending", "note": "" },
+            { "text": "report_uploads INSERT: owner allowed, editor denied, viewer denied; SELECT: any member allowed", "status": "pending", "note": "" },
+            { "text": "storage.objects (report-uploads bucket) INSERT: owner allowed, editor denied, viewer denied; SELECT: any member allowed", "status": "pending", "note": "" }
           ]
         },
         {
@@ -147,6 +156,32 @@
           "title": "Access control",
           "tests": [
             { "text": "Visiting a reports/:id you're not a member of shows a friendly access-denied page, not a 404", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Phase 6 — Cross-cutting Hardening Pass",
+      "subModules": [
+        {
+          "title": "Supabase advisors",
+          "tests": [
+            { "text": "get_advisors (security) clean of anything introduced by this project's own migrations", "status": "pass", "note": "Only pre-existing, already-ruled items remain: rls_auto_enable (Supabase platform function, not ours) and leaked-password-protection (Free-plan gated, ruled skip-for-v1)." },
+            { "text": "get_advisors (performance) clean of anything actionable", "status": "pass", "note": "Only INFO-level unused-index notices, expected on tables with light test traffic so far." }
+          ]
+        },
+        {
+          "title": "Secret handling",
+          "tests": [
+            { "text": "No service-role key or any secret beyond the public anon/publishable key appears anywhere in tracked repo files", "status": "pass", "note": "git grep across all tracked files and full git history (git log --all -p) — zero hits beyond a code comment mentioning the term, not a value." },
+            { "text": "No service-role key or JWT secret appears in the built app/dist/ client bundle", "status": "pass", "note": "Checked both the literal string 'service_role' and any JWT-shaped (eyJ...eyJ...) token — zero matches. Only the intended-public sb_publishable_ key and project URL appear, exactly once each." },
+            { "text": "Vercel project env vars contain only the two documented VITE_ vars, nothing service-role-shaped", "status": "pending", "note": "No MCP tool exposes stored env var values (Vercel's API redacts them by design) — the service-role key itself was never given to Claude or entered anywhere but Supabase's own Edge Function runtime, so there's no plausible path for it to be in Vercel at all, but this specific check needs a human eyeballing the Vercel dashboard's env var names to be certain." }
+          ]
+        },
+        {
+          "title": "Preview/Production Supabase isolation",
+          "tests": [
+            { "text": "Preview and Production deployments intentionally share one Supabase project (no separate staging project) — confirmed as the accepted v1 tradeoff, not an oversight", "status": "pass", "note": "Per the plan: a second Supabase project for Preview is a possible future follow-up if isolated preview data starts to matter, not part of this migration." }
           ]
         }
       ]
