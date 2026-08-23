@@ -873,6 +873,7 @@ const reportCopyBtn = document.getElementById('report-copy-btn');
 const reportCopyLabel = document.getElementById('report-copy-label');
 const reportDownloadBtn = document.getElementById('report-download-btn');
 let latestReportMarkdown = '';
+let latestReportPlainText = '';
 let latestReportClipboardHtml = '';
 
 function escapeHtml(str){
@@ -919,12 +920,14 @@ function escapeTeamsMarkdown(str){
 
 /* Builds the report as Microsoft Teams' subset markdown (# / ## / ### headings,
    **bold**, > blockquote) — see README for the supported-syntax reference.
-   This is what Download saves as a .md file, and also what Copy to clipboard
-   writes as the text/plain fallback for paste targets that don't accept
-   rich HTML (plain-text editors, terminals, etc). Teams' typed-markdown only
-   converts syntax as you type it — pasting this text in verbatim does NOT
-   re-render it, so it is not what makes the *pasted* chat message look
-   formatted; buildReportClipboardHtml() below does that job. */
+   This is what Download saves as a .md file: a real markdown file, opened by
+   markdown-aware tools (VS Code, GitHub, Obsidian, ...) that actually parse
+   this syntax. It is NOT used for the clipboard anymore — Teams' typed-
+   markdown only converts syntax as you type it, so pasting this text in
+   verbatim just inserts the literal '#'/'**'/'>' characters (confirmed:
+   whenever the rich text/html clipboard write isn't available and this was
+   used as the plain-text fallback, that's exactly what showed up pasted into
+   Teams). buildReportPlainText() below is the clipboard's plain-text form. */
 function buildReportMarkdown(data){
   const generatedAt = new Date().toLocaleString();
   const lines = [];
@@ -959,6 +962,49 @@ function buildReportMarkdown(data){
         }
       });
       lines.push('');
+    });
+  });
+
+  return lines.join('\n').trim() + '\n';
+}
+
+/* Builds the report as clean plain text — no markdown syntax characters at
+   all, since nothing pastes this through a markdown parser (see the note on
+   buildReportMarkdown() above). This is the text/plain half of the rich
+   clipboard write, and the whole payload on the older-browser fallback path
+   (navigator.clipboard.writeText / execCommand('copy')) — so it needs to
+   read fine entirely on its own, unformatted. Only one blank line between
+   modules; everything inside a module (sub-module heading, case lines,
+   notes) stays tight, one line each, to avoid the oversized gaps a blank
+   line per line-group produces once Teams turns each into its own
+   paragraph. */
+function buildReportPlainText(data){
+  const generatedAt = new Date().toLocaleString();
+  const lines = [];
+  lines.push(docTitle);
+  lines.push(`Generated: ${generatedAt}`);
+  lines.push(`Summary: ${data.passed} passed, ${data.failed} failed (${data.total} included; pending omitted)`);
+
+  if (!data.total){
+    lines.push('');
+    lines.push('No passed or failed cases yet.');
+    return lines.join('\n');
+  }
+
+  data.sections.forEach(mod => {
+    lines.push('');
+    lines.push(`${mod.num}. ${mod.title}`);
+    mod.subModules.forEach(sm => {
+      lines.push(`${sm.num}. ${sm.title}`);
+      sm.cases.forEach(t => {
+        const status = t.status === 'pass' ? 'Passed' : 'Failed';
+        lines.push(`${t.id} [${status}] — ${t.text}`);
+        if (t.note && t.note.trim()){
+          t.note.trim().split(/\n/).forEach(noteLine => {
+            lines.push(`Note: ${noteLine}`);
+          });
+        }
+      });
     });
   });
 
@@ -1057,6 +1103,7 @@ function openReportModal(){
   }
   
   latestReportMarkdown = buildReportMarkdown(data);
+  latestReportPlainText = buildReportPlainText(data);
   latestReportClipboardHtml = buildReportClipboardHtml(data);
   reportModalBody.innerHTML = buildReportHtml(data);
   reportCopyLabel.textContent = 'Copy to clipboard';
@@ -1089,14 +1136,16 @@ reportCopyBtn.addEventListener('click', async () => {
   if (!latestReportMarkdown) return;
 
   // Preferred: write both text/html (rich — renders formatted on paste into
-  // Teams/Word/Outlook/Slack) and text/plain (the Teams-markdown fallback,
-  // for paste targets that don't accept rich HTML). Requires the async
-  // Clipboard API + ClipboardItem, unavailable on some older/mobile browsers.
+  // Teams/Word/Outlook/Slack) and text/plain (clean unformatted text — for
+  // paste targets that don't accept rich HTML, and for whichever of the two
+  // Teams itself prefers). Requires the async Clipboard API + ClipboardItem,
+  // which isn't available/allowed in every browser (older/mobile browsers,
+  // some non-Chromium engines) — when it throws, fall through below.
   if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
     try {
       const item = new ClipboardItem({
         'text/html': new Blob([latestReportClipboardHtml], { type: 'text/html' }),
-        'text/plain': new Blob([latestReportMarkdown], { type: 'text/plain' })
+        'text/plain': new Blob([latestReportPlainText], { type: 'text/plain' })
       });
       await navigator.clipboard.write([item]);
       markCopied();
@@ -1107,12 +1156,12 @@ reportCopyBtn.addEventListener('click', async () => {
   }
 
   try {
-    await navigator.clipboard.writeText(latestReportMarkdown);
+    await navigator.clipboard.writeText(latestReportPlainText);
     markCopied();
   } catch (err) {
     // Fallback for older mobile browsers
     const ta = document.createElement('textarea');
-    ta.value = latestReportMarkdown;
+    ta.value = latestReportPlainText;
     ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
