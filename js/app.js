@@ -1036,21 +1036,27 @@ function buildReportPlainText(data){
 }
 
 /* Builds the report as a plain semantic HTML fragment (real <h1>/<h2>/<h3>,
-   <strong>, <p>, <blockquote> — no CSS classes/styling, no <ol>/<li>) for the
-   text/html clipboard entry. Teams' compose box (like Word/Outlook/Slack) is
-   a rich-text editor: pasting HTML renders it as formatted rich text, while
-   pasting plain markdown syntax just inserts the literal characters. This is
-   what actually makes a pasted chat message look like a formatted report —
-   buildReportMarkdown() above only supplies the text/plain fallback + the
-   .md download. Kept deliberately unstyled (no class names, no <div>s) so
-   Teams' paste sanitizer has nothing to strip and nothing surprising bleeds
-   into the chat's own styling.
+   <strong>, <em>, <p> only — no <ol>/<li>, no <blockquote>, no CSS classes)
+   for the text/html clipboard entry. Teams' compose box (like Word/Outlook/
+   Slack) is a rich-text editor: pasting HTML renders it as formatted rich
+   text, while pasting plain markdown syntax just inserts the literal
+   characters. This is what actually makes a pasted chat message look like a
+   formatted report — buildReportMarkdown() above only supplies the .md
+   download, and buildReportPlainText() the clipboard's text/plain fallback.
+   Kept deliberately unstyled (no class names, no <div>s) so Teams' paste
+   sanitizer has nothing to strip and nothing surprising bleeds into the
+   chat's own styling.
 
    Test cases are plain <p> lines, not an <ol> list: nested lists don't chain
    into compound "1.1.1"-style numbering in any rich-text editor (each level
    just restarts its own counter), and we already have the full compound
    number as text (t.id) — an auto-numbered <li> on top of that would double
-   up ("1. 1.1.1 ..."), which is what the previous version did. */
+   up ("1. 1.1.1 ..."), which is what an earlier version did. Notes are a
+   plain <em> paragraph, not <blockquote>, for the same reason: Teams pulls
+   quote blocks out of the normal flow into its own quote-card UI, and with
+   more than one blockquote in a single paste it kept only the last one —
+   confirmed live, an earlier case's note vanished, a later one landed
+   detached at the very end of the message. */
 function buildReportClipboardHtml(data){
   if (!data.total){
     return `<p><strong>No passed or failed cases yet.</strong></p>`;
@@ -1070,8 +1076,14 @@ function buildReportClipboardHtml(data){
         const note = (t.note || '').trim();
         html += `<p>${escapeHtml(t.id)} <strong>[${escapeHtml(status)}]</strong> — ${escapeHtml(t.text)}</p>`;
         if (note){
+          // Plain <p>, not <blockquote>: Teams' paste handling pulls quote
+          // blocks out of the normal flow into its own quote-card UI, and
+          // with more than one blockquote in a single paste it keeps only
+          // the last one (confirmed — a second case's note vanished, the
+          // first showed up detached at the very end). A plain paragraph
+          // renders inline and reliably, same as every other line here.
           const noteHtml = note.split(/\n/).map(line => escapeHtml(line)).join('<br>');
-          html += `<blockquote>Note: ${noteHtml}</blockquote>`;
+          html += `<p><em>Note: ${noteHtml}</em></p>`;
         }
       });
     });
