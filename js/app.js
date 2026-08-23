@@ -103,12 +103,16 @@ function jumpTo(id){
   // model first, since render() rebuilds the DOM from that model.
   if (id.startsWith('mod-')){
     const mod = modules.find(m => m.num === id.slice(4));
-    if (mod) mod.collapsed = false;
+    if (mod && !mod.locked) mod.collapsed = false;
   } else if (id.startsWith('sub-')){
     const subNum = id.slice(4);
     for (const mod of modules){
       const sm = mod.subModules.find(s => s.num === subNum);
-      if (sm){ mod.collapsed = false; sm.collapsed = false; break; }
+      if (sm){
+        if (!mod.locked) mod.collapsed = false;
+        if (!sm.locked) sm.collapsed = false;
+        break;
+      }
     }
   }
   render();
@@ -121,7 +125,15 @@ function jumpTo(id){
 jumpModuleSel.addEventListener('change', () => {
   const modNum = jumpModuleSel.value;
   jumpSubmoduleSel.innerHTML = '<option value="">Jump to sub-module…</option>';
-  if (!modNum){ jumpSubmoduleSel.style.display = 'none'; return; }
+  
+  if (!modNum){
+    jumpSubmoduleSel.style.display = 'none';
+    return;
+  }
+
+  // Reset filter to 'all' when jump nav is used
+  currentFilter = 'all';
+  document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
 
   const mod = modules.find(m => m.num === modNum);
   if (mod && mod.subModules.length){
@@ -139,19 +151,24 @@ jumpModuleSel.addEventListener('change', () => {
 });
 
 jumpSubmoduleSel.addEventListener('change', () => {
-  if (jumpSubmoduleSel.value) jumpTo(`sub-${jumpSubmoduleSel.value}`);
+  if (jumpSubmoduleSel.value){
+    // Reset filter to 'all' when jump nav is used
+    currentFilter = 'all';
+    document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
+    jumpTo(`sub-${jumpSubmoduleSel.value}`);
+  }
 });
 
 function toggleCollapseModule(modNum){
   const mod = modules.find(m => m.num === modNum);
-  if (mod) mod.collapsed = !mod.collapsed;
+  if (mod && !mod.locked) mod.collapsed = !mod.collapsed;
   render();
 }
 
 function toggleCollapseSub(subNum){
   for (const mod of modules){
     const sm = mod.subModules.find(s => s.num === subNum);
-    if (sm){ sm.collapsed = !sm.collapsed; break; }
+    if (sm && !sm.locked){ sm.collapsed = !sm.collapsed; break; }
   }
   render();
 }
@@ -172,14 +189,21 @@ function togglePinSub(subNum){
 
 function toggleLockModule(modNum){
   const mod = modules.find(m => m.num === modNum);
-  if (mod) mod.locked = !mod.locked;
+  if (mod){
+    mod.locked = !mod.locked;
+    if (mod.locked) mod.collapsed = true;
+  }
   render();
 }
 
 function toggleLockSub(subNum){
   for (const mod of modules){
     const sm = mod.subModules.find(s => s.num === subNum);
-    if (sm){ sm.locked = !sm.locked; break; }
+    if (sm){
+      sm.locked = !sm.locked;
+      if (sm.locked) sm.collapsed = true;
+      break;
+    }
   }
   render();
 }
@@ -388,7 +412,7 @@ function updateFilterEmptyState(){
   if (clearBtn){
     clearBtn.addEventListener('click', () => {
       currentFilter = 'all';
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+      document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
       applyFilter();
     });
   }
@@ -573,13 +597,14 @@ function updateStats(){
   const total = tests.length;
   const passed = tests.filter(t => t.status === 'pass').length;
   const failed = tests.filter(t => t.status === 'fail').length;
+  const pending = tests.filter(t => t.status === 'pending').length;
   const tested = passed + failed;
   const pct = total ? Math.round((tested / total) * 100) : 0;
 
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-passed').textContent = passed;
   document.getElementById('stat-failed').textContent = failed;
-  document.getElementById('stat-percent').textContent = pct + '%';
+  document.getElementById('stat-pending').textContent = pending;
 
   const fillEl = document.getElementById('progress-fill');
   const labelEl = document.getElementById('progress-label');
@@ -636,12 +661,13 @@ function applyFilter(){
     const hasVisible = !!smEl.querySelector('.test-row:not(.filtered-out)');
     smEl.classList.toggle('filtered-out', !hasVisible);
 
+    const subNum = smEl.dataset.subId;
+    const parentMod = modules.find(m => m.subModules.some(s => s.num === subNum));
+    const sm = parentMod && parentMod.subModules.find(s => s.num === subNum);
+
     if (currentFilter !== 'all'){
-      if (hasVisible) smEl.classList.remove('collapsed');
+      if (hasVisible && sm && !sm.locked) smEl.classList.remove('collapsed');
     } else {
-      const subNum = smEl.dataset.subId;
-      const parentMod = modules.find(m => m.subModules.some(s => s.num === subNum));
-      const sm = parentMod && parentMod.subModules.find(s => s.num === subNum);
       smEl.classList.toggle('collapsed', !!(sm && sm.collapsed));
     }
   });
@@ -653,21 +679,30 @@ function applyFilter(){
     modEl.classList.toggle('filtered-out', !hasVisible);
 
     const modNum = modEl.id.replace('mod-', '');
+    const mod = modules.find(m => m.num === modNum);
     if (currentFilter !== 'all'){
-      if (hasVisible) modEl.classList.remove('collapsed');
+      if (hasVisible && mod && !mod.locked) modEl.classList.remove('collapsed');
     } else {
-      const mod = modules.find(m => m.num === modNum);
       modEl.classList.toggle('collapsed', !!(mod && mod.collapsed));
     }
   });
   updateFilterEmptyState();
 }
 
-document.querySelectorAll('.filter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    currentFilter = btn.dataset.filter;
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b === btn));
-    applyFilter();
+// KPI card click handlers for filtering
+document.querySelectorAll('.stat-tile').forEach(tile => {
+  tile.addEventListener('click', () => {
+    const filter = tile.dataset.filter;
+    if (filter){
+      currentFilter = filter;
+      // Reset jump nav when filter is applied
+      jumpModuleSel.value = '';
+      jumpSubmoduleSel.value = '';
+      jumpSubmoduleSel.style.display = 'none';
+      // Update active state on KPI cards
+      document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t === tile));
+      applyFilter();
+    }
   });
 });
 
@@ -817,6 +852,20 @@ exportReportBtn.addEventListener('click', (e) => {
   openReportModal();
 });
 
+/* ---------- Toast notification ---------- */
+const toast = document.getElementById('toast');
+let toastTimeout = null;
+
+function showToast(message, duration = 3000){
+  toast.textContent = message;
+  toast.classList.add('show');
+  
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+  }, duration);
+}
+
 /* ---------- Generate report modal (passed + failed with notes) ---------- */
 const reportModal = document.getElementById('report-modal');
 const reportModalBody = document.getElementById('report-modal-body');
@@ -949,11 +998,17 @@ function buildReportHtml(data){
 
 function openReportModal(){
   const data = collectReportCases();
+  
+  if (data.total === 0){
+    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.');
+    return;
+  }
+  
   latestReportMarkdown = buildReportMarkdown(data);
   reportModalBody.innerHTML = buildReportHtml(data);
   reportCopyLabel.textContent = 'Copy to clipboard';
-  reportCopyBtn.disabled = !data.total;
-  reportDownloadBtn.disabled = !data.total;
+  reportCopyBtn.disabled = false;
+  reportDownloadBtn.disabled = false;
   reportModal.classList.add('open');
   reportModal.setAttribute('aria-hidden', 'false');
   document.getElementById('report-modal-close').focus();
@@ -1104,7 +1159,7 @@ function applyImport(parsed){
     modules = buildModules(parsed.modules);
     suiteLoaded = true;
     currentFilter = 'all';
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+    document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     render();
   };
 
@@ -1138,6 +1193,9 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 render();
+
+// Set initial active state for Total KPI card
+document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
 
 fetch('config.json', { cache: 'no-store' })
   .then(res => (res.ok ? res.json() : {}))
