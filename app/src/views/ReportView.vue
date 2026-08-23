@@ -1,18 +1,33 @@
 <script setup>
-// Real single-report view (Phase 4): modules/sub-modules/tests tree with
-// status + note editing (role-gated), stats/progress, and the owner-only
+// Real single-report view (Phase 4 + Phase 5): modules/sub-modules/tests
+// tree with status + note editing (role-gated), stats/progress, pin/lock,
+// filters/jump-nav, export (PDF/JSON), Generate report, and the owner-only
 // Manage Access panel (member list, role changes, invites, removal).
-import { ref, reactive, computed, onMounted } from 'vue'
+//
+// Phase 4 built the data/role-gating layer (all reused unchanged here:
+// fetchReportDetail/getMyRole/updateTestStatus/updateTestNote from
+// useReports.js, plus the whole Manage Access modal below). Phase 5 adds
+// the useReportRunner.js/useTreeUiState.js/useImportExport.js layers and
+// splits the tree markup into ModuleCard/SubModuleCard/TestRow/StatTiles/
+// ProgressBar, porting pin/lock/filter/jump-nav/scroll-collapse/export
+// behavior from the legacy static app (js/app.js) — see each new file's own
+// header comment for exactly which legacy function it ports.
+import { ref, reactive, computed, provide, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { useReports } from '../stores/useReports'
+import { useReportRunner } from '../stores/useReportRunner'
+import { useTreeUiState } from '../composables/useTreeUiState'
+import { useImportExport } from '../composables/useImportExport'
 import Icon from '../components/icons/Icon.vue'
+import ModuleCard from '../components/ModuleCard.vue'
+import StatTiles from '../components/StatTiles.vue'
+import ProgressBar from '../components/ProgressBar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { user } = useAuth()
 const {
-  fetchReportDetail,
   getMyRole,
   archiveReport,
   inviteMember,
@@ -24,102 +39,174 @@ const {
 
 const reportId = route.params.id
 
-const loading = ref(true)
-const loadError = ref('')
-const report = ref(null)
-const members = ref([])
-const modules = ref([])
-const subModules = ref([])
-const tests = ref([])
-const stats = ref(null)
+const runner = useReportRunner()
+const { loading, loadError, report, members, statsView, tree, findTest } = runner
+
+const treeUi = useTreeUiState()
 
 const myRole = computed(() => (report.value ? getMyRole({ report_members: members.value }, user.value?.id) : null))
 const canEditTests = computed(() => myRole.value === 'owner' || myRole.value === 'editor')
 const isOwner = computed(() => myRole.value === 'owner')
 
+provide('treeUi', treeUi)
+provide('canEdit', canEditTests)
+
 async function load() {
-  loading.value = true
-  loadError.value = ''
-  const { data, error } = await fetchReportDetail(reportId)
-  loading.value = false
-  if (error) {
-    loadError.value = error.message || 'Could not load this report.'
-    return
-  }
-  report.value = data.report
-  members.value = data.members
-  modules.value = data.modules
-  subModules.value = data.subModules
-  tests.value = data.tests
-  stats.value = data.stats
+  await runner.load(reportId)
 }
 
 onMounted(load)
 
-const statsView = computed(
-  () =>
-    stats.value || {
-      total_tests: 0,
-      pass_count: 0,
-      fail_count: 0,
-      pending_count: 0,
-      pass_percent: 0,
-    },
+// ---------------------------------------------------------------------
+// Filters (KPI-card status filter + live search) — combine to hide
+// modules/sub-modules/tests with no match, matching applyFilter() in the
+// legacy app (js/app.js ~line 790).
+// ---------------------------------------------------------------------
+const currentFilter = ref('all')
+const searchQuery = ref('')
+const filterActive = computed(() => currentFilter.value !== 'all' || !!searchQuery.value)
+provide('filterActive', filterActive)
+
+const FILTER_LABELS = { all: 'All', pending: 'Pending', pass: 'Passed', fail: 'Failed' }
+
+const viewTree = computed(() => {
+  const status = currentFilter.value
+  const q = searchQuery.value.trim().toLowerCase()
+  return tree.value.map((mod) => {
+    const subModules = mod.subModules.map((sm) => {
+      const tests = sm.tests.map((t) => {
+        const statusMatch = status === 'all' || t.status === status
+        const searchMatch = !q || t.name.toLowerCase().includes(q)
+        return { ...t, visible: statusMatch && searchMatch }
+      })
+      const hasVisible = tests.some((t) => t.visible)
+      return { ...sm, tests, hasVisible, hidden: filterActive.value && !hasVisible }
+    })
+    const hasVisibleSub = subModules.some((sm) => sm.hasVisible)
+    return { ...mod, subModules, hasVisibleSub, hidden: filterActive.value && !hasVisibleSub }
+  })
+})
+
+const anyModuleVisible = computed(() => viewTree.value.some((m) => !m.hidden))
+const showFilterEmpty = computed(
+  () => statsView.value.total_tests > 0 && filterActive.value && !anyModuleVisible.value,
 )
-
-// ---------------------------------------------------------------------
-// Tree grouping + per-module/sub-module pass/fail counts for mini-bars.
-// ---------------------------------------------------------------------
-const sortedModules = computed(() => [...modules.value].sort((a, b) => a.order_index - b.order_index))
-
-const subModulesByModule = computed(() => {
-  const map = {}
-  for (const sm of subModules.value) {
-    ;(map[sm.module_id] ||= []).push(sm)
+const filterEmptyMessage = computed(() => {
+  const statusLabel = FILTER_LABELS[currentFilter.value] || currentFilter.value
+  const q = searchQuery.value.trim()
+  if (q && currentFilter.value !== 'all') {
+    return {
+      title: `No ${statusLabel.toLowerCase()} cases match "${q}"`,
+      hint: `Nothing matches both the ${statusLabel} filter and your search. Clear either one to see more cases.`,
+    }
   }
-  for (const arr of Object.values(map)) arr.sort((a, b) => a.order_index - b.order_index)
-  return map
+  if (q) {
+    return {
+      title: `No cases match "${q}"`,
+      hint: 'Nothing in the loaded suite matches your search. Clear it to see the full suite.',
+    }
+  }
+  return {
+    title: `No ${statusLabel.toLowerCase()} cases`,
+    hint: `Nothing matches the ${statusLabel} filter right now. Clear the filter to see the full suite, or keep working — matching cases will appear here as statuses change.`,
+  }
 })
 
-const testsBySubModule = computed(() => {
-  const map = {}
-  for (const t of tests.value) {
-    ;(map[t.sub_module_id] ||= []).push(t)
-  }
-  for (const arr of Object.values(map)) arr.sort((a, b) => a.order_index - b.order_index)
-  return map
-})
-
-function subModuleStats(subModuleId) {
-  const ts = testsBySubModule.value[subModuleId] || []
-  const pass = ts.filter((t) => t.status === 'pass').length
-  const fail = ts.filter((t) => t.status === 'fail').length
-  return { total: ts.length, pass, fail }
+function handleFilterClick(filter) {
+  currentFilter.value = filter
+  jumpModuleValue.value = ''
+  jumpSubValue.value = ''
 }
-
-function moduleStats(moduleId) {
-  const subs = subModulesByModule.value[moduleId] || []
-  let total = 0
-  let pass = 0
-  let fail = 0
-  for (const sm of subs) {
-    const s = subModuleStats(sm.id)
-    total += s.total
-    pass += s.pass
-    fail += s.fail
-  }
-  return { total, pass, fail }
+function clearSearch() {
+  searchQuery.value = ''
 }
-
-function pct(count, total) {
-  return total > 0 ? (count / total) * 100 : 0
+function clearFilterAndSearch() {
+  currentFilter.value = 'all'
+  clearSearch()
 }
 
 // ---------------------------------------------------------------------
-// Test status + note editing.
+// Jump navigation — dropdowns to jump straight to a module/sub-module,
+// auto-expanding it and scrolling it into view. Ported from js/app.js's
+// jumpTo()/jump-module/jump-submodule handlers (~line 110-190).
+// ---------------------------------------------------------------------
+const jumpModuleValue = ref('')
+const jumpSubValue = ref('')
+
+const jumpSubOptions = computed(() => {
+  if (!jumpModuleValue.value) return []
+  const mod = tree.value.find((m) => m.num === jumpModuleValue.value)
+  return mod ? mod.subModules : []
+})
+
+function scrollToId(id) {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  })
+}
+
+function onJumpModuleChange() {
+  jumpSubValue.value = ''
+  if (!jumpModuleValue.value) return
+  // Reset filter/search when jump nav is used — either could otherwise hide
+  // the module being jumped to.
+  clearFilterAndSearch()
+  const mod = tree.value.find((m) => m.num === jumpModuleValue.value)
+  if (mod) treeUi.expandModule(mod.id)
+  scrollToId(`mod-${jumpModuleValue.value}`)
+}
+
+function onJumpSubChange() {
+  if (!jumpSubValue.value) return
+  clearFilterAndSearch()
+  const mod = tree.value.find((m) => m.num === jumpModuleValue.value)
+  const sm = mod && mod.subModules.find((s) => s.num === jumpSubValue.value)
+  if (mod) treeUi.expandModule(mod.id)
+  if (sm) treeUi.expandSub(sm.id)
+  scrollToId(`sub-${jumpSubValue.value}`)
+}
+
+// ---------------------------------------------------------------------
+// Pinned bar — ported from renderPinnedBar()/buildPinnedChip() (js/app.js
+// ~line 352-400).
+// ---------------------------------------------------------------------
+const pinnedItems = computed(() => {
+  const items = []
+  for (const mod of tree.value) {
+    if (treeUi.pinnedModules[mod.id]) {
+      items.push({
+        key: `mod-${mod.id}`,
+        label: `${mod.num}. ${mod.name}`,
+        targetId: `mod-${mod.num}`,
+        unpin: () => treeUi.togglePinModule(mod.id),
+      })
+    }
+    for (const sm of mod.subModules) {
+      if (treeUi.pinnedSubModules[sm.id]) {
+        items.push({
+          key: `sub-${sm.id}`,
+          label: `${sm.num} · ${sm.name}`,
+          targetId: `sub-${sm.num}`,
+          unpin: () => treeUi.togglePinSub(sm.id),
+        })
+      }
+    }
+  }
+  return items
+})
+
+// ---------------------------------------------------------------------
+// Test status + note editing. Status is immediate; notes are debounced
+// (~500ms) autosave — replaces Phase 4's manual open-textarea -> click-Save
+// flow. RLS (Phase 2) is the real enforcement boundary either way.
 // ---------------------------------------------------------------------
 const statusBusy = reactive({})
-async function handleStatusChange(test, newStatus) {
+async function handleStatusChange(testVm, newStatus) {
+  const test = findTest(testVm.id)
+  if (!test) return
   const prev = test.status
   test.status = newStatus
   statusBusy[test.id] = true
@@ -131,27 +218,73 @@ async function handleStatusChange(test, newStatus) {
   }
 }
 
-const openNotes = reactive({})
-const noteDrafts = reactive({})
-function toggleNote(test) {
-  openNotes[test.id] = !openNotes[test.id]
-  if (openNotes[test.id] && noteDrafts[test.id] === undefined) {
-    noteDrafts[test.id] = test.note || ''
-  }
+const noteDebounceTimers = {}
+function handleNoteInput(testVm, value) {
+  const test = findTest(testVm.id)
+  if (!test) return
+  clearTimeout(noteDebounceTimers[test.id])
+  noteDebounceTimers[test.id] = setTimeout(async () => {
+    const { error } = await updateTestNote(test.id, value)
+    if (error) {
+      showToast(error.message || 'Could not save note.')
+      return
+    }
+    test.note = value || null
+  }, 500)
 }
-async function saveNote(test) {
-  const { error } = await updateTestNote(test.id, noteDrafts[test.id])
-  if (error) {
-    showToast(error.message || 'Could not save note.')
+
+// ---------------------------------------------------------------------
+// Bulk mark ("Mark all Pass/Fail/Pending" from a module/sub-module's "more
+// options" menu) — ported from bulkMarkTests() (js/app.js ~line 428).
+// Confirms only when it would overwrite existing Pass/Fail results.
+// ---------------------------------------------------------------------
+const STATUS_LABELS = { pass: 'Pass', fail: 'Fail', pending: 'Pending' }
+const confirmModal = reactive({ open: false, title: '', message: '', onConfirm: null })
+
+function openConfirm(title, message, onConfirm) {
+  confirmModal.title = title
+  confirmModal.message = message
+  confirmModal.onConfirm = onConfirm
+  confirmModal.open = true
+}
+function closeConfirm() {
+  confirmModal.open = false
+  confirmModal.onConfirm = null
+}
+function confirmYes() {
+  const cb = confirmModal.onConfirm
+  closeConfirm()
+  if (cb) cb()
+}
+
+function handleBulkMark(testVms, targetStatus, scopeLabel) {
+  const realTests = testVms.map((tv) => findTest(tv.id)).filter(Boolean)
+  const overwriteCount = realTests.filter((t) => t.status !== 'pending' && t.status !== targetStatus).length
+
+  const apply = async () => {
+    for (const t of realTests) {
+      if (t.status === targetStatus) continue
+      const prev = t.status
+      t.status = targetStatus
+      const { error } = await updateTestStatus(t.id, targetStatus)
+      if (error) {
+        t.status = prev
+        showToast(error.message || 'Could not update one or more tests.')
+      }
+    }
+  }
+
+  if (overwriteCount === 0) {
+    apply()
     return
   }
-  test.note = noteDrafts[test.id] || null
-  openNotes[test.id] = false
-  showToast('Note saved.')
-}
-function cancelNote(test) {
-  noteDrafts[test.id] = test.note || ''
-  openNotes[test.id] = false
+
+  const statusLabel = STATUS_LABELS[targetStatus]
+  openConfirm(
+    `Mark all as ${statusLabel}?`,
+    `This overwrites ${overwriteCount} already-marked test${overwriteCount === 1 ? '' : 's'} in "${scopeLabel}" to ${statusLabel}. This can't be undone.`,
+    apply,
+  )
 }
 
 // ---------------------------------------------------------------------
@@ -182,7 +315,7 @@ async function handleDeleteReport() {
 }
 
 // ---------------------------------------------------------------------
-// Manage Access panel (owner-only).
+// Manage Access panel (owner-only) — unchanged from Phase 4.
 // ---------------------------------------------------------------------
 const manageOpen = ref(false)
 const inviteValue = ref('')
@@ -205,9 +338,6 @@ async function submitInvite() {
     inviteError.value = error
     return
   }
-  // The Edge Function returns a status/message, not the member row itself
-  // (an 'invited' result has no row yet — it's pending the invitee's
-  // signup) — refetch instead of guessing what to push into the list.
   if (data?.status === 'added') {
     await load()
   }
@@ -249,6 +379,175 @@ async function handleRemoveMember(member) {
   }
   members.value = members.value.filter((m) => m.id !== member.id)
 }
+
+// ---------------------------------------------------------------------
+// Export menu (Download PDF / Download JSON / Generate report) + Generate
+// report modal. Ported from js/app.js's export dropdown (~line 855) and the
+// Generate report modal (~line 1071-1487).
+// ---------------------------------------------------------------------
+const importExport = useImportExport()
+const { reportSettings } = importExport
+
+const exportMenuOpen = ref(false)
+const reportModalOpen = ref(false)
+const reportSettingsOpen = ref(false)
+const reportCopyLabel = ref('Copy to clipboard')
+const pdfBusy = ref(false)
+
+const reportTitle = computed(() => report.value?.title || 'QA Testing Report')
+const reportData = computed(() => importExport.collectReportCases(tree.value, reportSettings))
+const reportMarkdown = computed(() => importExport.buildReportMarkdown(reportTitle.value, reportData.value))
+const reportPlainText = computed(() => importExport.buildReportPlainText(reportTitle.value, reportData.value))
+const reportClipboardHtml = computed(() =>
+  importExport.buildReportClipboardHtml(reportTitle.value, reportData.value),
+)
+
+function handleDownloadJson() {
+  exportMenuOpen.value = false
+  importExport.downloadJson(reportTitle.value, tree.value)
+}
+
+async function handleDownloadPdf() {
+  exportMenuOpen.value = false
+  pdfBusy.value = true
+  // Snapshot + close any open modal so it isn't photographed into the
+  // capture, then restore — same as the legacy downloadPdf()'s
+  // openModals handling (js/app.js ~line 966).
+  const wasManageOpen = manageOpen.value
+  const wasReportModalOpen = reportModalOpen.value
+  manageOpen.value = false
+  reportModalOpen.value = false
+
+  document.body.classList.add('generating-pdf')
+  await nextTick()
+  try {
+    await importExport.downloadPdf(document.body)
+  } catch {
+    showToast('PDF generation failed. Please try again.')
+  } finally {
+    document.body.classList.remove('generating-pdf')
+    manageOpen.value = wasManageOpen
+    reportModalOpen.value = wasReportModalOpen
+    pdfBusy.value = false
+  }
+}
+
+function handleOpenReportModal() {
+  exportMenuOpen.value = false
+  const anyCases = importExport.collectReportCases(tree.value, {
+    all: true,
+    passed: false,
+    passedWithNote: false,
+    failedOnly: false,
+  })
+  if (anyCases.total === 0) {
+    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.')
+    return
+  }
+  reportCopyLabel.value = 'Copy to clipboard'
+  reportModalOpen.value = true
+}
+function closeReportModal() {
+  reportModalOpen.value = false
+  reportSettingsOpen.value = false
+}
+function onReportSettingAll() {
+  importExport.setAllReportSetting()
+}
+function onReportSettingToggle(key, checked) {
+  importExport.toggleReportSetting(key, checked)
+}
+async function handleCopyReport() {
+  const { error } = await importExport.copyReportToClipboard(reportPlainText.value, reportClipboardHtml.value)
+  if (error) {
+    showToast(error)
+    return
+  }
+  reportCopyLabel.value = 'Copied!'
+  setTimeout(() => {
+    reportCopyLabel.value = 'Copy to clipboard'
+  }, 1600)
+}
+function handleDownloadReport() {
+  importExport.downloadReportMarkdown(reportMarkdown.value)
+}
+
+// ---------------------------------------------------------------------
+// Close any open dropdown/menu on an outside click or Escape — mirrors
+// closeAllMenus() (js/app.js ~line 254).
+// ---------------------------------------------------------------------
+function closeAllMenus() {
+  treeUi.closeMenu()
+  exportMenuOpen.value = false
+  reportSettingsOpen.value = false
+}
+function onDocumentClick(e) {
+  if (!e.target.closest('.menu-wrap')) closeAllMenus()
+}
+function onDocumentKeydown(e) {
+  if (e.key !== 'Escape') return
+  if (confirmModal.open) {
+    closeConfirm()
+    return
+  }
+  if (reportModalOpen.value) {
+    closeReportModal()
+    return
+  }
+  closeAllMenus()
+}
+
+// ---------------------------------------------------------------------
+// Scroll-collapse — hides the KPI/progress/jump-nav block while scrolling
+// down through the test list, brings it back on scroll-up or near the top.
+// Ported from js/app.js (~line 1743 onward).
+// ---------------------------------------------------------------------
+const SCROLL_COLLAPSE_THRESHOLD = 80
+const SCROLL_COLLAPSE_THROTTLE_MS = 100
+const SCROLL_COLLAPSE_COOLDOWN_MS = 400
+let lastScrollY = 0
+let scrollCollapseThrottled = false
+let lastToggleAt = 0
+
+function updateScrollCollapse() {
+  const y = window.scrollY
+  if (Date.now() - lastToggleAt < SCROLL_COLLAPSE_COOLDOWN_MS) {
+    lastScrollY = y
+    return
+  }
+  const delta = y - lastScrollY
+  const isCollapsed = document.body.classList.contains('scroll-collapsed')
+  const suiteLoaded = !!report.value
+  if (suiteLoaded && delta > 0 && y > SCROLL_COLLAPSE_THRESHOLD && !isCollapsed) {
+    document.body.classList.add('scroll-collapsed')
+    lastToggleAt = Date.now()
+  } else if ((!suiteLoaded || y <= SCROLL_COLLAPSE_THRESHOLD || delta < 0) && isCollapsed) {
+    document.body.classList.remove('scroll-collapsed')
+    lastToggleAt = Date.now()
+  }
+  lastScrollY = y
+}
+function onScroll() {
+  if (scrollCollapseThrottled) return
+  scrollCollapseThrottled = true
+  setTimeout(() => {
+    scrollCollapseThrottled = false
+  }, SCROLL_COLLAPSE_THROTTLE_MS)
+  updateScrollCollapse()
+}
+
+onMounted(() => {
+  lastScrollY = window.scrollY
+  window.addEventListener('scroll', onScroll, { passive: true })
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+onUnmounted(() => {
+  window.removeEventListener('scroll', onScroll)
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+  document.body.classList.remove('scroll-collapsed', 'generating-pdf')
+})
 </script>
 
 <template>
@@ -269,6 +568,33 @@ async function handleRemoveMember(member) {
           </div>
         </div>
         <div class="head-actions">
+          <div class="menu-wrap export-wrap">
+            <button
+              class="btn"
+              type="button"
+              :disabled="!statsView.total_tests || pdfBusy"
+              :aria-expanded="exportMenuOpen"
+              aria-haspopup="true"
+              @click.stop="exportMenuOpen = !exportMenuOpen"
+            >
+              <Icon name="download" cls="icon-sm" />
+              <span class="btn-label">{{ pdfBusy ? 'Generating…' : 'Export' }}</span>
+            </button>
+            <div class="dropdown-menu export-menu" :class="{ open: exportMenuOpen }">
+              <button type="button" class="dropdown-item" @click="handleDownloadPdf">
+                <Icon name="download" cls="icon-sm" />
+                <span>Download PDF</span>
+              </button>
+              <button type="button" class="dropdown-item" @click="handleDownloadJson">
+                <Icon name="download" cls="icon-sm" />
+                <span>Download JSON</span>
+              </button>
+              <button type="button" class="dropdown-item" @click="handleOpenReportModal">
+                <Icon name="fileJson" cls="icon-sm" />
+                <span>Generate report</span>
+              </button>
+            </div>
+          </div>
           <button v-if="isOwner" class="btn" type="button" @click="manageOpen = true">
             <Icon name="users" cls="icon-sm" />
             <span class="btn-label">Manage access</span>
@@ -280,27 +606,62 @@ async function handleRemoveMember(member) {
         </div>
       </div>
 
-      <div v-if="report && statsView.total_tests > 0" class="stat-grid">
-        <div class="stat-tile total">
-          <div class="stat-label">Total</div>
-          <div class="stat-value">{{ statsView.total_tests }}</div>
+      <div v-if="report" class="head-metrics">
+        <StatTiles :stats="statsView" :active-filter="currentFilter" @filter="handleFilterClick" />
+        <ProgressBar :percent="statsView.pass_percent" :label="`${statsView.pass_percent}% passed`" />
+
+        <div class="jump-group">
+          <div class="search-wrap">
+            <Icon name="search" cls="icon search-icon" />
+            <input
+              v-model="searchQuery"
+              type="search"
+              class="search-input"
+              placeholder="Search test cases…"
+              aria-label="Search test cases"
+              autocomplete="off"
+            />
+            <button
+              v-if="searchQuery"
+              type="button"
+              class="search-clear-btn"
+              aria-label="Clear search"
+              @click="clearSearch"
+            >
+              <Icon name="x" cls="icon-sm" />
+            </button>
+          </div>
+          <select v-model="jumpModuleValue" class="jump-select" @change="onJumpModuleChange">
+            <option value="">Jump to module…</option>
+            <option v-for="mod in tree" :key="mod.id" :value="mod.num">{{ mod.num }}. {{ mod.name }}</option>
+          </select>
+          <select
+            v-if="jumpModuleValue && jumpSubOptions.length"
+            v-model="jumpSubValue"
+            class="jump-select"
+            @change="onJumpSubChange"
+          >
+            <option value="">Jump to sub-module…</option>
+            <option v-for="sm in jumpSubOptions" :key="sm.id" :value="sm.num">{{ sm.num }} · {{ sm.name }}</option>
+          </select>
         </div>
-        <div class="stat-tile passed">
-          <div class="stat-label">Pass</div>
-          <div class="stat-value">{{ statsView.pass_count }}</div>
+
+        <div class="pinned-bar" :style="{ display: pinnedItems.length ? 'flex' : 'none' }">
+          <span class="pinned-label">
+            <Icon name="pin" cls="icon-sm" />
+            Pinned
+          </span>
+          <div class="pinned-items">
+            <div v-for="item in pinnedItems" :key="item.key" class="pinned-chip">
+              <button type="button" class="pinned-chip-label" @click="scrollToId(item.targetId)">
+                {{ item.label }}
+              </button>
+              <button type="button" class="pinned-unpin" title="Unpin" @click="item.unpin">
+                <Icon name="x" cls="icon-sm" />
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="stat-tile failed">
-          <div class="stat-label">Fail</div>
-          <div class="stat-value">{{ statsView.fail_count }}</div>
-        </div>
-        <div class="stat-tile percent">
-          <div class="stat-label">Pass %</div>
-          <div class="stat-value">{{ statsView.pass_percent }}%</div>
-        </div>
-      </div>
-      <div v-if="report && statsView.total_tests > 0" class="progress-track" data-contrast="on-fill">
-        <div class="progress-fill" :style="{ width: statsView.pass_percent + '%' }"></div>
-        <div class="progress-label">{{ statsView.pass_percent }}% passed</div>
       </div>
     </div>
   </div>
@@ -318,118 +679,29 @@ async function handleRemoveMember(member) {
       </div>
     </div>
 
-    <div v-else-if="sortedModules.length === 0" class="empty-state">
+    <div v-else-if="tree.length === 0" class="empty-state">
       <h2 class="empty-title">No modules in this report</h2>
       <p class="empty-hint">This report's imported JSON had no modules.</p>
     </div>
 
     <template v-else>
-      <div v-for="(mod, mIdx) in sortedModules" :key="mod.id" class="module">
-        <div class="module-head">
-          <div class="module-head-left">
-            <span class="module-num">{{ mIdx + 1 }}</span>
-            <span class="module-title">{{ mod.name }}</span>
-          </div>
-          <div class="module-head-progress">
-            <span class="module-count">
-              {{ moduleStats(mod.id).pass }}/{{ moduleStats(mod.id).total }} pass
-            </span>
-            <div class="mini-bar">
-              <div
-                class="progress-seg pass"
-                :style="{ width: pct(moduleStats(mod.id).pass, moduleStats(mod.id).total) + '%' }"
-              ></div>
-              <div
-                class="progress-seg fail"
-                :style="{ width: pct(moduleStats(mod.id).fail, moduleStats(mod.id).total) + '%' }"
-              ></div>
-            </div>
-          </div>
-        </div>
+      <ModuleCard
+        v-for="mod in viewTree"
+        v-show="!mod.hidden"
+        :key="mod.id"
+        :mod="mod"
+        :status-busy="statusBusy"
+        :on-status-change="handleStatusChange"
+        :on-note-input="handleNoteInput"
+        :on-bulk-mark="handleBulkMark"
+      />
 
-        <div class="module-body">
-          <div
-            v-for="sm in subModulesByModule[mod.id] || []"
-            :key="sm.id"
-            class="submodule"
-          >
-            <div class="submodule-title">
-              <div class="submodule-head-left">
-                <span class="sub-title-text">{{ sm.name }}</span>
-              </div>
-              <div class="submodule-head-progress">
-                <span class="sub-count">
-                  {{ subModuleStats(sm.id).pass }}/{{ subModuleStats(sm.id).total }}
-                </span>
-                <div class="mini-bar">
-                  <div
-                    class="progress-seg pass"
-                    :style="{ width: pct(subModuleStats(sm.id).pass, subModuleStats(sm.id).total) + '%' }"
-                  ></div>
-                  <div
-                    class="progress-seg fail"
-                    :style="{ width: pct(subModuleStats(sm.id).fail, subModuleStats(sm.id).total) + '%' }"
-                  ></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="submodule-body">
-              <div
-                v-for="test in testsBySubModule[sm.id] || []"
-                :key="test.id"
-                class="test-row"
-                :data-status="test.status"
-              >
-                <div class="test-main">
-                  <span class="status-dot" :class="test.status"></span>
-                  <span class="test-text">{{ test.name }}</span>
-                  <div class="test-controls">
-                    <div class="status-select-wrap" :data-val="test.status">
-                      <select
-                        class="status-select"
-                        :data-val="test.status"
-                        :disabled="!canEditTests || statusBusy[test.id]"
-                        :value="test.status"
-                        @change="handleStatusChange(test, $event.target.value)"
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="pass">Pass</option>
-                        <option value="fail">Fail</option>
-                      </select>
-                    </div>
-                    <button
-                      class="note-toggle"
-                      :class="{ 'has-note': test.note }"
-                      type="button"
-                      @click="toggleNote(test)"
-                    >
-                      <Icon name="notePlus" cls="icon-sm" />
-                      {{ test.note ? 'Note' : 'Add note' }}
-                    </button>
-                  </div>
-                </div>
-                <div class="note-box" :class="{ open: openNotes[test.id] }">
-                  <textarea
-                    v-model="noteDrafts[test.id]"
-                    :disabled="!canEditTests"
-                    placeholder="Add context, repro steps, or a reason for this status…"
-                  ></textarea>
-                  <div class="modal-actions" style="margin-top: 8px">
-                    <button class="btn" type="button" @click="cancelNote(test)">Cancel</button>
-                    <button
-                      v-if="canEditTests"
-                      class="btn primary"
-                      type="button"
-                      @click="saveNote(test)"
-                    >
-                      Save note
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      <div v-if="showFilterEmpty" id="filter-empty" class="empty-state empty-state--filter">
+        <div class="empty-icon" aria-hidden="true"><Icon name="search" cls="icon-lg" /></div>
+        <h2 class="empty-title">{{ filterEmptyMessage.title }}</h2>
+        <p class="empty-hint">{{ filterEmptyMessage.hint }}</p>
+        <div class="empty-actions">
+          <button class="btn primary" type="button" @click="clearFilterAndSearch">Show all cases</button>
         </div>
       </div>
     </template>
@@ -501,6 +773,129 @@ async function handleRemoveMember(member) {
         <button class="btn" type="button" @click="manageOpen = false">Close</button>
         <button class="btn primary" type="button" :disabled="inviteBusy" @click="submitInvite">
           {{ inviteBusy ? 'Adding…' : 'Add member' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk-mark confirm modal -->
+  <div class="modal-overlay" :class="{ open: confirmModal.open }">
+    <div class="modal-box modal-box--closable">
+      <button type="button" class="icon-btn modal-close-btn" aria-label="Cancel" @click="closeConfirm">
+        <Icon name="x" />
+      </button>
+      <h2>{{ confirmModal.title }}</h2>
+      <p>{{ confirmModal.message }}</p>
+      <div class="modal-actions">
+        <button class="btn" type="button" @click="closeConfirm">No</button>
+        <button class="btn danger" type="button" @click="confirmYes">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate report modal -->
+  <div class="modal-overlay" :class="{ open: reportModalOpen }">
+    <div class="modal-box modal-box--report" role="dialog" aria-modal="true">
+      <div class="report-modal-header">
+        <div class="report-modal-heading"><h2>Test report</h2></div>
+        <div class="report-modal-actions">
+          <div class="menu-wrap report-settings-wrap">
+            <button
+              type="button"
+              class="icon-btn report-modal-action-btn"
+              aria-haspopup="true"
+              :aria-expanded="reportSettingsOpen"
+              aria-label="Report settings"
+              title="Report settings"
+              @click.stop="reportSettingsOpen = !reportSettingsOpen"
+            >
+              <Icon name="settings" />
+            </button>
+            <div class="dropdown-menu report-settings-panel" :class="{ open: reportSettingsOpen }">
+              <p class="report-settings-title">Included test cases</p>
+              <label class="report-settings-check">
+                <input type="checkbox" :checked="reportSettings.all" @change="onReportSettingAll" />
+                <span>All</span>
+              </label>
+              <label class="report-settings-check">
+                <input
+                  type="checkbox"
+                  :checked="reportSettings.passed"
+                  @change="onReportSettingToggle('passed', $event.target.checked)"
+                />
+                <span>Passed</span>
+              </label>
+              <label class="report-settings-check">
+                <input
+                  type="checkbox"
+                  :checked="reportSettings.passedWithNote"
+                  @change="onReportSettingToggle('passedWithNote', $event.target.checked)"
+                />
+                <span>Passed with note</span>
+              </label>
+              <label class="report-settings-check">
+                <input
+                  type="checkbox"
+                  :checked="reportSettings.failedOnly"
+                  @change="onReportSettingToggle('failedOnly', $event.target.checked)"
+                />
+                <span>Failed only</span>
+              </label>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="icon-btn report-modal-action-btn"
+            aria-label="Close report"
+            @click="closeReportModal"
+          >
+            <Icon name="x" />
+          </button>
+        </div>
+      </div>
+
+      <div class="report-modal-body">
+        <div v-if="!reportData.total" class="report-empty">
+          <strong>No passed or failed cases yet</strong>
+          Mark cases as Pass or Fail to include them in this report. Pending cases are omitted.
+        </div>
+        <article v-else class="report-doc">
+          <header class="report-doc-header">
+            <p class="report-doc-kicker">QA Test Report</p>
+            <h1 class="report-doc-title">{{ reportTitle }}</h1>
+            <p class="report-doc-meta">
+              Summary: {{ reportData.passed }} passed, {{ reportData.failed }} failed
+              ({{ reportData.total }} included; pending omitted)
+            </p>
+          </header>
+          <section v-for="mod in reportData.sections" :key="mod.num" class="report-module">
+            <h2 class="report-module-title">{{ mod.num }}. {{ mod.title }}</h2>
+            <div v-for="sm in mod.subModules" :key="sm.num" class="report-submodule">
+              <h3 class="report-submodule-title">{{ sm.num }} {{ sm.title }}</h3>
+              <ol class="report-case-list">
+                <li v-for="t in sm.cases" :key="t.num" class="report-case-item">
+                  <p class="report-case-line">
+                    <span class="report-case-status-text">[{{ t.status === 'pass' ? 'Passed' : 'Failed' }}]</span>
+                    {{ t.num }} — {{ t.name }}
+                  </p>
+                  <ul v-if="t.note && t.note.trim()" class="report-note-list">
+                    <li><span class="report-note-label">Note:</span> {{ t.note }}</li>
+                  </ul>
+                </li>
+              </ol>
+            </div>
+          </section>
+        </article>
+      </div>
+
+      <div class="report-modal-footer">
+        <button type="button" class="btn" :disabled="!reportData.total" @click="handleCopyReport">
+          <Icon name="copy" cls="icon-sm" />
+          <span>{{ reportCopyLabel }}</span>
+        </button>
+        <button type="button" class="btn primary" :disabled="!reportData.total" @click="handleDownloadReport">
+          <Icon name="download" cls="icon-sm" />
+          <span>Download</span>
         </button>
       </div>
     </div>
