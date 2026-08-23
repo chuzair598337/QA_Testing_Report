@@ -56,7 +56,10 @@ both places at once.
   for quick access; click a pinned chip to jump to it.
 - **Lock / unlock** a module or sub-module — locked cases can't have their
   status or note edited, and a locked card auto-collapses and can't be
-  expanded again until unlocked.
+  expanded again until unlocked. Since locked content only actually renders
+  expanded during PDF export (the live UI keeps it collapsed), each locked
+  test row also carries its own lock icon there, not just a border/opacity
+  dim, so it stays unambiguous in a printed/exported report.
 - **Jump navigation** — dropdowns to jump straight to a module or
   sub-module, auto-expanding it and scrolling it into view.
 
@@ -97,8 +100,15 @@ both places at once.
 - **Light / dark theme toggle**, defaulting to the OS/browser's
   `prefers-color-scheme` on first load; kept for the session.
 - **Responsive layout** — sticky header chrome; a mobile hamburger menu
-  (icon-only actions collapse into a dropdown panel) below the `900px`/
-  `480px` breakpoints; touch-friendly controls throughout.
+  (icon-only actions collapse into a dropdown panel) below the `900px`
+  breakpoint, with a further density tier at `680px` and the most
+  aggressive shrink at `480px`; touch-friendly controls throughout. The
+  import-replace confirm dialog's Export/Discard action row stacks
+  full-width below `480px` instead of squeezing side by side.
+- **Collapsible KPI/progress/jump-nav on scroll** — that block hides while
+  scrolling down through the test list and reappears on scroll-up or near
+  the top, giving short/landscape screens their vertical space back without
+  losing the sticky title/actions row above it.
 - **Toast notifications** for transient feedback (e.g. empty-report
   gate) that auto-dismiss.
 - **Empty states** for: nothing imported yet, a JSON file with no test
@@ -142,15 +152,3 @@ bullet graduates out of this section once it ships.
   changed instead of a silent full replace.
 - **Per-test/module owner field** — an optional assignee so a suite split
   across multiple QA testers can show who owns what.
-- **Mobile stacking fix for the import-replace modal's action row** — the
-  Export dropdown + "Discard Changes" button need a stacked, full-width
-  layout below ~480px instead of squeezing side by side.
-- **Extra responsive breakpoint (~600–760px)** — a middle tier between the
-  current `900px`/`480px` breakpoints so small tablets and split-screen
-  views don't inherit the full mobile layout untuned.
-- **Collapsible sticky header on scroll** — the KPI/progress/jump-nav block
-  hides on scroll-down and reappears on scroll-up, to give small-height
-  (landscape mobile) screens more room for the actual test list.
-- **Stronger locked-state indicator** — a more visible cue than the current
-  badge + reduced opacity, so a locked test/module isn't easy to miss in a
-  long list at a glance.

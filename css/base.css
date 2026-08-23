@@ -113,6 +113,18 @@
   .head-metrics{
     background:var(--surface);
     border-bottom:1px solid var(--border);
+    max-height:640px;
+    overflow:hidden;
+    transition:max-height .3s ease, opacity .2s ease, border-color .2s ease;
+  }
+  /* Collapsed while actively scrolling down through the list (see the
+     scroll listener in app.js) — gives short/landscape screens their
+     vertical space back without losing the sticky title/actions row. */
+  body.scroll-collapsed .head-metrics{
+    max-height:0;
+    opacity:0;
+    border-color:transparent;
+    pointer-events:none;
   }
   .head-title-block{
     min-width:0;
@@ -664,7 +676,21 @@
   .test-row[data-status="fail"]{ background:linear-gradient(90deg, var(--fail-bg), transparent 40%); }
   .test-row[data-status="pass"]{ background:linear-gradient(90deg, var(--pass-bg), transparent 40%); }
   .test-row.filtered-out{ display:none; }
-  .test-row.locked{ opacity:.65; }
+  /* Locked rows get a border + a dedicated lock icon (row-lock-badge, added
+     by renderTestRow) on top of the reduced opacity — a status/pass-fail
+     color cue alone isn't enough of a "you can't edit this" signal, and the
+     module/sub-module header's lock badge scrolls out of view in a long
+     list. */
+  .test-row.locked{
+    opacity:.72;
+    border-left:3px solid var(--border-strong);
+    padding-left:1px;
+  }
+  .row-lock-badge{
+    display:inline-flex;
+    color:var(--ink-faint);
+    flex-shrink:0;
+  }
 
   .test-main{
     display:flex;

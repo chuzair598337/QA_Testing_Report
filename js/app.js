@@ -549,6 +549,7 @@ function renderTestRow(t, locked){
   const main = document.createElement('div');
   main.className = 'test-main';
   main.innerHTML = `
+    ${locked ? `<span class="row-lock-badge" title="Locked — status/note can't be edited">${icon('lock', 'icon-sm')}</span>` : ''}
     <span class="status-dot ${t.status}"></span>
     <span class="test-id">${t.id}.</span>
     <span class="test-text">${escapeHtml(t.text)}</span>
@@ -1541,13 +1542,75 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-render();
+/* ---------- Collapse KPI/progress/jump-nav while scrolling down ----------
+   The sticky header chrome (title + actions) stays put, but the metrics
+   block underneath it (stat tiles, progress bar, jump nav, pinned bar) can
+   eat a lot of vertical space on a short/landscape screen. Hide it while
+   actively scrolling down through the list, bring it back on scroll-up or
+   near the top — same pattern as most mobile browser chrome. Only applies
+   once a suite is loaded (the block is hidden entirely before that via the
+   body:not(.suite-loaded) rule already, independent of this). */
+const SCROLL_COLLAPSE_THRESHOLD = 80;
+let lastScrollY = window.scrollY;
+// Time-based throttle (not requestAnimationFrame): rAF callbacks are
+// deprioritized/suspended for backgrounded or non-visible tabs in most
+// browsers, which would otherwise wedge this — the "wait for the next
+// frame" flag never clears if that frame never comes, silently freezing
+// the collapse/expand behavior for the rest of the session.
+const SCROLL_COLLAPSE_THROTTLE_MS = 100;
+let scrollCollapseThrottled = false;
 
-// Set initial active state for Total KPI card
-document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
+// Collapsing/expanding .head-metrics shortens/lengthens the whole document
+// (its max-height transition), which can shrink the page below the current
+// scroll position — the browser then clamps window.scrollY down on its own,
+// firing a further 'scroll' event that looks exactly like the user
+// scrolling up. Without a cooldown, that self-inflicted event immediately
+// un-collapses what we just collapsed (confirmed live: collapsing at
+// scrollY=400 clamps to ~388 mid-transition, an 11-12px drop that reads as
+// "scrolled up"). Ignore scroll events for a beat after our own toggle —
+// long enough for the .3s CSS transition's clamp to settle — rather than
+// trying to distinguish a genuine user scroll-up from our own layout shift.
+const SCROLL_COLLAPSE_COOLDOWN_MS = 400;
+let lastToggleAt = 0;
 
-fetch('config.json', { cache: 'no-store' })
-  .then(res => (res.ok ? res.json() : {}))
-  .then(cfg => { showSample = !!(cfg && cfg.showSample); })
-  .catch(() => { showSample = false; })
-  .finally(() => { render(); });
+function updateScrollCollapse(){
+  const y = window.scrollY;
+  if (Date.now() - lastToggleAt < SCROLL_COLLAPSE_COOLDOWN_MS){
+    lastScrollY = y;
+    return;
+  }
+  const delta = y - lastScrollY;
+  const isCollapsed = document.body.classList.contains('scroll-collapsed');
+  if (suiteLoaded && delta > 0 && y > SCROLL_COLLAPSE_THRESHOLD && !isCollapsed){
+    document.body.classList.add('scroll-collapsed');
+    lastToggleAt = Date.now();
+  } else if ((!suiteLoaded || y <= SCROLL_COLLAPSE_THRESHOLD || delta < 0) && isCollapsed){
+    document.body.classList.remove('scroll-collapsed');
+    lastToggleAt = Date.now();
+  }
+  lastScrollY = y;
+}
+
+window.addEventListener('scroll', () => {
+  if (scrollCollapseThrottled) return;
+  scrollCollapseThrottled = true;
+  setTimeout(() => { scrollCollapseThrottled = false; }, SCROLL_COLLAPSE_THROTTLE_MS);
+  updateScrollCollapse();
+}, { passive: true });
+
+// Resolve config.json (showSample) before the first render, rather than
+// rendering once and re-rendering when it resolves — avoids a visible
+// pop-in of the "Load sample data" button on the empty state and a
+// redundant full DOM rebuild on every load.
+(async function init(){
+  try {
+    const res = await fetch('config.json', { cache: 'no-store' });
+    const cfg = res.ok ? await res.json() : {};
+    showSample = !!(cfg && cfg.showSample);
+  } catch (e) {
+    showSample = false;
+  }
+  render();
+  // Set initial active state for Total KPI card
+  document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
+})();
