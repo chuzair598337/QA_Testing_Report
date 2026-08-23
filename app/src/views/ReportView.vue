@@ -219,6 +219,13 @@ const roleChangeBusy = reactive({})
 async function handleRoleChange(member, newRole) {
   const prev = member.role
   member.role = newRole
+  const ownerCount = members.value.filter((m) => m.role === 'owner').length
+  if (prev === 'owner' && newRole !== 'owner' && ownerCount <= 1) {
+    member.role = prev
+    showToast("Can't demote the only owner — promote someone else first.")
+    return
+  }
+
   roleChangeBusy[member.id] = true
   const { error } = await updateMemberRole(member.id, newRole)
   roleChangeBusy[member.id] = false
@@ -229,6 +236,12 @@ async function handleRoleChange(member, newRole) {
 }
 
 async function handleRemoveMember(member) {
+  const ownerCount = members.value.filter((m) => m.role === 'owner').length
+  if (member.role === 'owner' && ownerCount <= 1) {
+    showToast("Can't remove the only owner — promote someone else first.")
+    return
+  }
+
   const { error } = await removeMember(member.id)
   if (error) {
     showToast(error.message || 'Could not remove member.')
