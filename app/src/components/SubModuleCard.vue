@@ -83,7 +83,7 @@ function pct(count, total) {
           >
             <Icon name="ellipsisVertical" />
           </button>
-          <div class="dropdown-menu" :class="{ open: menuOpen }">
+          <div class="dropdown-menu" :class="{ open: menuOpen }" :inert="!menuOpen">
             <button type="button" class="dropdown-item" @click.stop="onPin">
               <Icon :name="pinned ? 'pinOff' : 'pin'" cls="icon-sm" />
               <span>{{ pinned ? 'Unpin' : 'Pin' }}</span>

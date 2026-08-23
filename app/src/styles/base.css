@@ -243,9 +243,24 @@
     position:absolute;
     inset:0 auto 0 0;
     width:0%;
-    background:linear-gradient(90deg, var(--primary), var(--accent));
+    /* Capped at 40% accent, not the full bright cyan — the on-fill label
+       is always white (see .progress-label--on-fill), and pure --accent
+       measured 2.50:1 with white (light theme) / 1.99:1 (dark theme) at
+       the fill's own trailing edge, wherever that lands. AA audit fix;
+       still reads as a primary→accent gradient, just capped short of the
+       point where it stops being legible under white text. */
+    background:linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--accent) 40%, var(--primary) 60%));
     transition:width .25s ease;
   }
+  /* Two identical, exactly-overlapping labels, each clipped to only the
+     half of the bar it can be legible on: the copy over the filled portion
+     is always high-contrast against the fill gradient, the copy over the
+     unfilled track is always high-contrast against the track. This
+     replaces a single-color label that swapped white/dark at a fixed 42%
+     fill threshold — correct only when the label's short and centered;
+     AA audit measured 1.13:1 wherever the (fixed-color) label straddled
+     the fill/track boundary, which is most percentages. --pct is set
+     inline alongside --progress-fill's width so both stay in sync. */
   .progress-label{
     position:absolute;
     inset:0;
@@ -257,15 +272,18 @@
     font-size:12px;
     font-weight:700;
     letter-spacing:.02em;
-    color:var(--ink);
     pointer-events:none;
-    transition:color .15s ease;
   }
-  .progress-track[data-contrast="on-fill"] .progress-label{
+  .progress-label--on-fill{
     color:#fff;
+    clip-path:inset(0 calc(100% - var(--pct, 0%)) 0 0);
   }
-  html[data-theme="dark"] .progress-track[data-contrast="on-fill"] .progress-label{
+  html[data-theme="dark"] .progress-label--on-fill{
     color:#0F1520;
+  }
+  .progress-label--on-track{
+    color:var(--ink);
+    clip-path:inset(0 0 0 var(--pct, 0%));
   }
   /* Mini bars inside module / sub-module headers (pass + fail segments) */
   .progress-seg.pass{ background:var(--pass); height:100%; transition:width .25s ease; }
@@ -811,6 +829,19 @@
   .status-select-wrap[data-val="pending"]{ color:var(--ink-soft); }
   .status-select-wrap[data-val="pass"]{ color:#fff; }
   .status-select-wrap[data-val="fail"]{ color:#fff; }
+
+  /* Dark theme's --pass/--fail are bright/light colors (readable as text on
+     a dark surface), not the dark saturated colors light mode uses — white
+     text on top of them fails AA (measured 1.90:1 pass / 3.07:1 fail).
+     Dark ink reads correctly on both instead. AA audit fix. */
+  html[data-theme="dark"] select.status-select[data-val="pass"],
+  html[data-theme="dark"] select.status-select[data-val="fail"],
+  html[data-theme="dark"] .status-select-wrap[data-val="pass"],
+  html[data-theme="dark"] .status-select-wrap[data-val="fail"],
+  html[data-theme="dark"] .status-pill-print[data-val="pass"],
+  html[data-theme="dark"] .status-pill-print[data-val="fail"]{
+    color:#0F1520;
+  }
 
   /* PDF-only stand-in for the native <select> above (see TestRow.vue) —
      plain text in a plain span, hidden outside PDF capture. Deliberately

@@ -8,11 +8,11 @@
     --border-strong:#C9D1DC;
     --ink:#152238;
     --ink-soft:#5B6779;
-    --ink-faint:#8B95A5;
+    --ink-faint:#60697B; /* darkened from #8B95A5 — AA audit: 2.82:1 measured, failed 4.5:1 */
     --primary:#164E87;
     --primary-soft:#E8F0FA;
     --accent:#00B2DD;
-    --pass:#178A4C;
+    --pass:#15803D; /* darkened from #178A4C — AA audit: white-on-pass measured 4.40:1, failed 4.5:1 */
     --pass-bg:#E7F6EE;
     --fail:#C2361E;
     --fail-bg:#FCEBE7;
@@ -35,7 +35,7 @@
     --border-strong:#3A465D;
     --ink:#E7ECF4;
     --ink-soft:#A6B1C4;
-    --ink-faint:#6E7A90;
+    --ink-faint:#8994A8; /* lightened from #6E7A90 — AA audit: 3.90:1 measured, failed 4.5:1 */
     --primary:#4C9BE8;
     --primary-soft:#16283F;
     --accent:#28C8ED;

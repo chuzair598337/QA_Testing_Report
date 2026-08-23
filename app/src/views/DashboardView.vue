@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { useReports } from '../stores/useReports'
 import { useTheme } from '../composables/useTheme'
+import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/icons/Icon.vue'
 
 const router = useRouter()
@@ -127,6 +128,17 @@ function openCreateModal() {
 
 function closeCreateModal() {
   createOpen.value = false
+}
+
+// Escape-to-close + focus management (WCAG escape-routes / modal-escape —
+// AA audit: this modal previously had no ESC handler, no backdrop-click
+// dismiss, and left focus on the trigger button instead of moving into
+// the dialog). Backdrop click is bound directly on the template via
+// @click.self on .modal-overlay.
+const createModalBox = ref(null)
+useModalFocus(createOpen, createModalBox)
+function onCreateModalKeydown(e) {
+  if (e.key === 'Escape') closeCreateModal()
 }
 
 function handleFileChange(event) {
@@ -311,12 +323,21 @@ async function handleUnarchive(report) {
               <div class="stat-value">{{ statsOf(report).pass_percent }}%</div>
             </div>
           </div>
-          <div class="progress-track mini">
+          <div
+            class="progress-track mini"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="statsOf(report).pass_percent"
+            :aria-label="`${report.title} testing progress`"
+            :style="{ '--pct': statsOf(report).pass_percent + '%' }"
+          >
             <div
               class="progress-fill"
               :style="{ width: statsOf(report).pass_percent + '%' }"
             ></div>
-            <div class="progress-label">{{ statsOf(report).pass_percent }}% passed</div>
+            <div class="progress-label progress-label--on-fill" aria-hidden="true">{{ statsOf(report).pass_percent }}% passed</div>
+            <div class="progress-label progress-label--on-track">{{ statsOf(report).pass_percent }}% passed</div>
           </div>
         </template>
 
@@ -374,8 +395,14 @@ async function handleUnarchive(report) {
   </main>
 
   <!-- Create-report modal -->
-  <div class="modal-overlay" :class="{ open: createOpen }">
-    <div class="modal-box modal-box--form">
+  <div
+    class="modal-overlay"
+    :class="{ open: createOpen }"
+    :inert="!createOpen"
+    @click.self="closeCreateModal"
+    @keydown="onCreateModalKeydown"
+  >
+    <div ref="createModalBox" class="modal-box modal-box--form" role="dialog" aria-modal="true">
       <template v-if="createStep === 'form'">
         <h2>New report</h2>
         <p v-if="createError" class="auth-error">{{ createError }}</p>

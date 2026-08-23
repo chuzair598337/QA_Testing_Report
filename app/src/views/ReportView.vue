@@ -19,6 +19,7 @@ import { useReports } from '../stores/useReports'
 import { useReportRunner } from '../stores/useReportRunner'
 import { useTreeUiState } from '../composables/useTreeUiState'
 import { useImportExport } from '../composables/useImportExport'
+import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/icons/Icon.vue'
 import ModuleCard from '../components/ModuleCard.vue'
 import StatTiles from '../components/StatTiles.vue'
@@ -273,6 +274,14 @@ function confirmYes() {
   if (cb) cb()
 }
 
+// Focus management for all three modals (AA audit — see useModalFocus.js).
+// ESC and backdrop-click are wired separately below/in the template.
+const confirmModalBox = ref(null)
+useModalFocus(
+  () => confirmModal.open,
+  confirmModalBox,
+)
+
 function handleBulkMark(testVms, targetStatus, scopeLabel) {
   const realTests = testVms.map((tv) => findTest(tv.id)).filter(Boolean)
   const overwriteCount = realTests.filter((t) => t.status !== 'pending' && t.status !== targetStatus).length
@@ -334,6 +343,8 @@ async function handleDeleteReport() {
 // Manage Access panel (owner-only) — unchanged from Phase 4.
 // ---------------------------------------------------------------------
 const manageOpen = ref(false)
+const manageModalBox = ref(null)
+useModalFocus(manageOpen, manageModalBox)
 const inviteValue = ref('')
 const inviteRole = ref('viewer')
 const inviteBusy = ref(false)
@@ -406,6 +417,8 @@ const { reportSettings } = importExport
 
 const exportMenuOpen = ref(false)
 const reportModalOpen = ref(false)
+const reportModalBox = ref(null)
+useModalFocus(reportModalOpen, reportModalBox)
 const reportSettingsOpen = ref(false)
 const reportCopyLabel = ref('Copy to clipboard')
 const pdfBusy = ref(false)
@@ -522,6 +535,11 @@ function onDocumentKeydown(e) {
     closeReportModal()
     return
   }
+  // AA audit: Manage Access previously had no ESC route out at all.
+  if (manageOpen.value) {
+    manageOpen.value = false
+    return
+  }
   closeAllMenus()
 }
 
@@ -619,7 +637,7 @@ onUnmounted(() => {
               <Icon name="download" cls="icon-sm" />
               <span class="btn-label">{{ pdfBusy ? 'Generating…' : 'Export' }}</span>
             </button>
-            <div class="dropdown-menu export-menu" :class="{ open: exportMenuOpen }">
+            <div class="dropdown-menu export-menu" :class="{ open: exportMenuOpen }" :inert="!exportMenuOpen">
               <button type="button" class="dropdown-item" @click="handleDownloadPdf">
                 <Icon name="download" cls="icon-sm" />
                 <span>Download PDF</span>
@@ -747,8 +765,13 @@ onUnmounted(() => {
   </main>
 
   <!-- Manage Access modal (owner-only) -->
-  <div class="modal-overlay" :class="{ open: manageOpen }">
-    <div class="modal-box modal-box--form">
+  <div
+    class="modal-overlay"
+    :class="{ open: manageOpen }"
+    :inert="!manageOpen"
+    @click.self="manageOpen = false"
+  >
+    <div ref="manageModalBox" class="modal-box modal-box--form" role="dialog" aria-modal="true">
       <h2>Manage access</h2>
 
       <div>
@@ -818,8 +841,13 @@ onUnmounted(() => {
   </div>
 
   <!-- Bulk-mark confirm modal -->
-  <div class="modal-overlay" :class="{ open: confirmModal.open }">
-    <div class="modal-box modal-box--closable">
+  <div
+    class="modal-overlay"
+    :class="{ open: confirmModal.open }"
+    :inert="!confirmModal.open"
+    @click.self="closeConfirm"
+  >
+    <div ref="confirmModalBox" class="modal-box modal-box--closable" role="dialog" aria-modal="true">
       <button type="button" class="icon-btn modal-close-btn" aria-label="Cancel" @click="closeConfirm">
         <Icon name="x" />
       </button>
@@ -833,8 +861,13 @@ onUnmounted(() => {
   </div>
 
   <!-- Generate report modal -->
-  <div class="modal-overlay" :class="{ open: reportModalOpen }">
-    <div class="modal-box modal-box--report" role="dialog" aria-modal="true">
+  <div
+    class="modal-overlay"
+    :class="{ open: reportModalOpen }"
+    :inert="!reportModalOpen"
+    @click.self="closeReportModal"
+  >
+    <div ref="reportModalBox" class="modal-box modal-box--report" role="dialog" aria-modal="true">
       <div class="report-modal-header">
         <div class="report-modal-heading"><h2>Test report</h2></div>
         <div class="report-modal-actions">
@@ -850,7 +883,7 @@ onUnmounted(() => {
             >
               <Icon name="settings" />
             </button>
-            <div class="dropdown-menu report-settings-panel" :class="{ open: reportSettingsOpen }">
+            <div class="dropdown-menu report-settings-panel" :class="{ open: reportSettingsOpen }" :inert="!reportSettingsOpen">
               <p class="report-settings-title">Included test cases</p>
               <label class="report-settings-check">
                 <input type="checkbox" :checked="reportSettings.all" @change="onReportSettingAll" />
