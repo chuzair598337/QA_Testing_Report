@@ -2,16 +2,20 @@
 // Serves both halves of the password-reset flow at one route, matching the
 // single `redirectTo: '<origin>/reset-password'` used in
 // resetPasswordForEmail:
-//  - no session yet -> "request a reset link" form (enter email)
-//  - landed here from the emailed link (a session now exists, established
-//    by supabase-js parsing the `?code=...` in the URL on load, since the
-//    client is configured with detectSessionInUrl) -> "set a new password"
-//    form
+//  - no session yet, no token_hash -> "request a reset link" form (enter email)
+//  - landed here from the emailed link, carrying `token_hash` (+ `type`,
+//    which Supabase sets to 'recovery') -> verify the token_hash directly
+//    via verifyOtp() before showing the "set new password" form. This link
+//    lands here directly (not via /auth/callback), and per Supabase's
+//    PKCE-flow docs the old code-exchange approach only works "on the same
+//    browser and device where the flow was started" — verifyOtp() has no
+//    such restriction.
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { supabase } from '../lib/supabaseClient'
 
+const route = useRoute()
 const router = useRouter()
 const { resetPasswordForEmail, updateUser } = useAuth()
 
@@ -24,6 +28,24 @@ const infoMessage = ref('')
 const loading = ref(false)
 
 onMounted(async () => {
+  const { token_hash: tokenHash, type } = route.query
+
+  if (typeof tokenHash === 'string' && tokenHash) {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: typeof type === 'string' && type ? type : 'recovery',
+    })
+
+    if (error) {
+      errorMessage.value = error.message
+      mode.value = 'request'
+      return
+    }
+
+    mode.value = 'update'
+    return
+  }
+
   const { data } = await supabase.auth.getSession()
   mode.value = data.session ? 'update' : 'request'
 })
