@@ -1,0 +1,161 @@
+/* Shared layout for the auth screens (login, signup, reset-password,
+   invite) — built on the existing design tokens from tokens.css, reusing
+   button.btn / .empty-icon conventions from base.css rather than
+   introducing a parallel design language. */
+
+.auth-page{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+
+.auth-card{
+  width:100%;
+  max-width:380px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:32px 28px;
+}
+
+.auth-eyebrow{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+  margin:0 0 4px;
+}
+
+.auth-title{
+  margin:0 0 20px;
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-0.01em;
+  color:var(--ink);
+}
+
+.auth-field{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-bottom:14px;
+}
+
+.auth-label{
+  font-size:13px;
+  font-weight:600;
+  color:var(--ink-soft);
+}
+
+.auth-input{
+  width:100%;
+  font-family:var(--sans);
+  font-size:14px;
+  padding:9px 12px;
+  border-radius:6px;
+  border:1px solid var(--border-strong);
+  background:var(--surface-alt);
+  color:var(--ink);
+}
+.auth-input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+.auth-input:disabled{ cursor:not-allowed; opacity:.6; }
+
+.auth-submit{
+  width:100%;
+  justify-content:center;
+  margin-top:4px;
+}
+
+.auth-error{
+  margin:0 0 14px;
+  padding:9px 12px;
+  border-radius:6px;
+  background:var(--fail-bg);
+  color:var(--fail);
+  font-size:13px;
+  line-height:1.4;
+}
+
+.auth-success{
+  margin:0 0 14px;
+  padding:9px 12px;
+  border-radius:6px;
+  background:var(--pass-bg);
+  color:var(--pass);
+  font-size:13px;
+  line-height:1.4;
+}
+
+.auth-divider{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:18px 0;
+  color:var(--ink-faint);
+  font-size:11px;
+  font-family:var(--mono);
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.auth-divider::before,
+.auth-divider::after{
+  content:'';
+  flex:1;
+  height:1px;
+  background:var(--border);
+}
+
+.auth-links{
+  margin-top:18px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  font-size:13px;
+  color:var(--ink-soft);
+  text-align:center;
+}
+.auth-links a{
+  color:var(--primary);
+  font-weight:600;
+  text-decoration:none;
+}
+.auth-links a:hover{ text-decoration:underline; }
+
+.auth-secondary-action{
+  appearance:none;
+  border:none;
+  background:none;
+  padding:0;
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:600;
+  color:var(--primary);
+  cursor:pointer;
+}
+.auth-secondary-action:hover{ text-decoration:underline; }
+.auth-secondary-action:disabled{ cursor:not-allowed; opacity:.6; text-decoration:none; }
+
+.social-auth{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.social-auth .btn{
+  width:100%;
+  justify-content:center;
+}
+
+.auth-status-page{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  text-align:center;
+  color:var(--ink-soft);
+}
