@@ -1,0 +1,52 @@
+/* Design tokens — ported unchanged from css/base.css (legacy static app).
+   Same custom properties, same [data-theme="dark"] overrides. */
+:root{
+    color-scheme: light;
+    --bg:#F5F7FA;
+    --surface:#FFFFFF;
+    --border:#E1E6ED;
+    --border-strong:#C9D1DC;
+    --ink:#152238;
+    --ink-soft:#5B6779;
+    --ink-faint:#8B95A5;
+    --primary:#164E87;
+    --primary-soft:#E8F0FA;
+    --accent:#00B2DD;
+    --pass:#178A4C;
+    --pass-bg:#E7F6EE;
+    --fail:#C2361E;
+    --fail-bg:#FCEBE7;
+    --pending:#8B95A5;
+    --pending-bg:#EEF1F5;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --radius: 8px;
+    --shadow: 0 1px 2px rgba(21,34,56,0.04), 0 4px 12px rgba(21,34,56,0.04);
+    --hover-bg:#F0F3F7;
+    --surface-alt:#FBFCFE;
+    --primary-hover:#123E6D;
+  }
+
+  html[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0F1520;
+    --surface:#161D2B;
+    --border:#2A3448;
+    --border-strong:#3A465D;
+    --ink:#E7ECF4;
+    --ink-soft:#A6B1C4;
+    --ink-faint:#6E7A90;
+    --primary:#4C9BE8;
+    --primary-soft:#16283F;
+    --accent:#28C8ED;
+    --pass:#3DD583;
+    --pass-bg:#132A20;
+    --fail:#F0685A;
+    --fail-bg:#2E1712;
+    --pending:#7C8AA0;
+    --pending-bg:#1D2536;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.28);
+    --hover-bg:#1E293C;
+    --surface-alt:#1B2334;
+    --primary-hover:#6FB2EF;
+  }
