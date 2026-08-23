@@ -3,7 +3,7 @@
 // the create-report import pipeline, and quick per-report actions gated
 // by role. Manage Access (member list + role edits + invites) lives on
 // ReportView.vue, since it's scoped to one report.
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { useReports } from '../stores/useReports'
@@ -15,6 +15,31 @@ const { user, signOut } = useAuth()
 const { fetchMyReports, getMyRole, createReport, archiveReport, unarchiveReport, inviteMember } =
   useReports()
 const { theme, toggleTheme } = useTheme()
+
+// Mobile hamburger nav (ported from setMobileNavOpen/toggleMobileNav in
+// js/app.js ~line 893-904) — below the 900px breakpoint (responsive.css)
+// .head-actions is display:none unless .is-open; this toggle is the
+// only way to reach Theme/New report/Log out at that width.
+const mobileNavOpen = ref(false)
+function toggleMobileNav() {
+  mobileNavOpen.value = !mobileNavOpen.value
+}
+function onDocumentClick(e) {
+  if (!e.target.closest('.head-actions') && !e.target.closest('.nav-toggle')) {
+    mobileNavOpen.value = false
+  }
+}
+function onDocumentKeydown(e) {
+  if (e.key === 'Escape') mobileNavOpen.value = false
+}
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
 
 const loading = ref(true)
 const loadError = ref('')
@@ -189,14 +214,25 @@ async function handleUnarchive(report) {
 </script>
 
 <template>
-  <div class="head-chrome">
+  <div class="head-chrome" :class="{ 'nav-open': mobileNavOpen }">
     <div class="head-inner">
       <div class="head-top">
         <div class="head-title-block">
           <div class="eyebrow">QA Testing Report</div>
           <h1>Dashboard</h1>
         </div>
-        <div class="head-actions">
+        <button
+          type="button"
+          class="nav-toggle"
+          id="nav-toggle"
+          :aria-label="mobileNavOpen ? 'Close menu' : 'Open menu'"
+          :aria-expanded="mobileNavOpen"
+          aria-controls="head-actions"
+          @click.stop="toggleMobileNav"
+        >
+          <Icon :name="mobileNavOpen ? 'x' : 'menu'" cls="icon-md nav-toggle-icon" />
+        </button>
+        <div id="head-actions" class="head-actions" :class="{ 'is-open': mobileNavOpen }">
           <button class="btn" type="button" @click="toggleTheme">
             <Icon :name="theme === 'dark' ? 'sun' : 'moon'" />
             <span class="btn-label">{{ theme === 'dark' ? 'Light' : 'Dark' }}</span>

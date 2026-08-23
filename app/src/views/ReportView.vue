@@ -492,13 +492,25 @@ function handleDownloadReport() {
 // Close any open dropdown/menu on an outside click or Escape — mirrors
 // closeAllMenus() (js/app.js ~line 254).
 // ---------------------------------------------------------------------
+// Mobile hamburger nav (ported from setMobileNavOpen/toggleMobileNav in
+// js/app.js ~line 893-904) — at >900px .head-actions is a normal flex
+// row and this button/state is invisible/inert (see responsive.css);
+// below that, .head-actions is display:none unless .is-open, and this
+// toggle is the only way to reach Export/Manage access/Delete at all.
+const mobileNavOpen = ref(false)
+function toggleMobileNav() {
+  mobileNavOpen.value = !mobileNavOpen.value
+  if (!mobileNavOpen.value) exportMenuOpen.value = false
+}
+
 function closeAllMenus() {
   treeUi.closeMenu()
   exportMenuOpen.value = false
   reportSettingsOpen.value = false
+  mobileNavOpen.value = false
 }
 function onDocumentClick(e) {
-  if (!e.target.closest('.menu-wrap')) closeAllMenus()
+  if (!e.target.closest('.menu-wrap') && !e.target.closest('.nav-toggle')) closeAllMenus()
 }
 function onDocumentKeydown(e) {
   if (e.key !== 'Escape') return
@@ -567,7 +579,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="head-chrome">
+  <div class="head-chrome" :class="{ 'nav-open': mobileNavOpen }">
     <div class="head-inner">
       <div class="head-top">
         <div class="head-title-block">
@@ -583,7 +595,18 @@ onUnmounted(() => {
             <span v-if="myRole" class="role-badge" :class="myRole">{{ myRole }}</span>
           </div>
         </div>
-        <div class="head-actions">
+        <button
+          type="button"
+          class="nav-toggle"
+          id="nav-toggle"
+          :aria-label="mobileNavOpen ? 'Close menu' : 'Open menu'"
+          :aria-expanded="mobileNavOpen"
+          aria-controls="head-actions"
+          @click.stop="toggleMobileNav"
+        >
+          <Icon :name="mobileNavOpen ? 'x' : 'menu'" cls="icon-md nav-toggle-icon" />
+        </button>
+        <div id="head-actions" class="head-actions" :class="{ 'is-open': mobileNavOpen }">
           <div class="menu-wrap export-wrap">
             <button
               class="btn"
