@@ -1,0 +1,155 @@
+{
+  "docTitle": "Vue 3 + Supabase Migration — Regression Suite",
+  "modules": [
+    {
+      "title": "Phase 0 — Supabase Connection Gate",
+      "subModules": [
+        {
+          "title": "Connector & project health",
+          "tests": [
+            { "text": "Supabase MCP connector is authenticated (list_organizations succeeds)", "status": "pass", "note": "Verified during Phase 0." },
+            { "text": "Target project pmrsojsxqjbzeikjgewe is ACTIVE_HEALTHY", "status": "pass", "note": "" },
+            { "text": "public schema is reachable and was empty before any migration ran", "status": "pass", "note": "" },
+            { "text": "Project URL and anon/publishable key match the Configuration Placeholder exactly", "status": "pass", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Phase 1 — Vue 3 + Vite Foundations",
+      "subModules": [
+        {
+          "title": "Build pipeline",
+          "tests": [
+            { "text": "npm run dev (from app/) renders the placeholder page with correct light theme", "status": "pending", "note": "" },
+            { "text": "Placeholder page renders correctly in dark theme (prefers-color-scheme / toggle)", "status": "pending", "note": "" },
+            { "text": "Push to the branch triggers a Vercel Preview build that serves the placeholder", "status": "pending", "note": "" },
+            { "text": "Hard refresh on a non-root path serves the app instead of 404 (vercel.json rewrite)", "status": "pending", "note": "Recheck at end of Phase 3 once real routes exist." }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Phase 2 — Supabase Schema, RLS, Storage",
+      "subModules": [
+        {
+          "title": "RLS enforcement",
+          "tests": [
+            { "text": "A non-member cannot SELECT a report they don't belong to", "status": "pending", "note": "" },
+            { "text": "A viewer cannot UPDATE a tests row (status or note)", "status": "pending", "note": "" },
+            { "text": "An editor CAN update a tests row's status/note but not structural columns", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "Storage",
+          "tests": [
+            { "text": "report-uploads bucket exists and is private (public: false)", "status": "pass", "note": "Confirmed programmatically during Phase 2." }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Phase 3 — Auth Screens & Route Guard",
+      "subModules": [
+        {
+          "title": "Signup & email confirmation",
+          "tests": [
+            { "text": "Sign up with a real email, receive the verification email", "status": "pending", "note": "" },
+            { "text": "Clicking the verification link in the SAME browser/device establishes a session at /auth/callback, no # in the URL", "status": "pending", "note": "Cross-device is a known v1 limitation (default email templates, PKCE) — documented, not a bug." }
+          ]
+        },
+        {
+          "title": "Login methods",
+          "tests": [
+            { "text": "Log in with email/password, lands on /dashboard", "status": "pending", "note": "" },
+            { "text": "Log in via magic link, lands on /dashboard", "status": "pending", "note": "" },
+            { "text": "Log in via Google OAuth, lands on /dashboard", "status": "pass", "note": "Confirmed working after enabling the provider + branding the OAuth consent screen." }
+          ]
+        },
+        {
+          "title": "Route guard",
+          "tests": [
+            { "text": "Visiting /dashboard directly while logged out redirects to /login (not a 404)", "status": "pending", "note": "" },
+            { "text": "Hard-refresh on /dashboard while logged in reloads correctly", "status": "pending", "note": "" },
+            { "text": "Repeat the hard-refresh check on a Preview deployment URL, not just Production", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "Password reset",
+          "tests": [
+            { "text": "Trigger password reset, follow the email link (same device), lands on /reset-password with no #", "status": "pending", "note": "" },
+            { "text": "Set a new password and log in with it", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Phase 4 — Dashboard, Report Creation, RBAC, Invites",
+      "subModules": [
+        {
+          "title": "Report creation",
+          "tests": [
+            { "text": "As Owner, create a report from sample.json, Dashboard stat counts are correct", "status": "pending", "note": "" },
+            { "text": "Raw uploaded file appears in the report-uploads bucket at <report_id>/<filename>", "status": "pending", "note": "" },
+            { "text": "report_uploads tracking row references the uploaded file", "status": "pending", "note": "" },
+            { "text": "A failed import (bad JSON / storage error) rolls back — no orphaned reports row left behind", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "Invites",
+          "tests": [
+            { "text": "Invite an existing account by email as Editor — added immediately, correct role badge", "status": "pending", "note": "" },
+            { "text": "Invite an existing account by email as Viewer — added immediately, correct role badge", "status": "pending", "note": "" },
+            { "text": "Invite a brand-new (not-yet-registered) email — invite email sent, access attached automatically post-signup", "status": "pending", "note": "Same-device PKCE limitation applies to the invite link itself." }
+          ]
+        },
+        {
+          "title": "RBAC",
+          "tests": [
+            { "text": "As Viewer, Manage Access and Delete controls are not shown", "status": "pending", "note": "" },
+            { "text": "Sole owner can't demote or remove themselves out of ownership", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Phase 5 — Report-Testing View",
+      "subModules": [
+        {
+          "title": "Editing",
+          "tests": [
+            { "text": "As Editor, changing a test's status persists across reload", "status": "pending", "note": "" },
+            { "text": "As Editor, typing a note autosaves (~500ms debounce) and persists across reload", "status": "pending", "note": "" },
+            { "text": "As Viewer, status/note controls are disabled in the UI", "status": "pending", "note": "" },
+            { "text": "As Viewer, a direct write attempt (devtools/API) is rejected by RLS, not just hidden in the UI", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "Tree UX",
+          "tests": [
+            { "text": "Collapse/expand a module and a sub-module", "status": "pending", "note": "" },
+            { "text": "Pin a module/sub-module, confirm it shows in the pinned bar", "status": "pending", "note": "" },
+            { "text": "Lock a module/sub-module, confirm its rows can't be collapsed/edited", "status": "pending", "note": "" },
+            { "text": "Filters (status + live search) narrow the tree correctly", "status": "pending", "note": "" },
+            { "text": "Jump-nav scrolls to the target module/sub-module and expands it", "status": "pending", "note": "" },
+            { "text": "Scroll-collapse chrome hides/shows the metrics block while scrolling", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "Export",
+          "tests": [
+            { "text": "Download PDF produces a correct-looking export", "status": "pending", "note": "" },
+            { "text": "Download JSON produces a valid, re-importable file", "status": "pending", "note": "" },
+            { "text": "Generate report modal — settings, preview, copy, and download all work", "status": "pending", "note": "" }
+          ]
+        },
+        {
+          "title": "Access control",
+          "tests": [
+            { "text": "Visiting a reports/:id you're not a member of shows a friendly access-denied page, not a 404", "status": "pending", "note": "" }
+          ]
+        }
+      ]
+    }
+  ]
+}
