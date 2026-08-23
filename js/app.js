@@ -1503,6 +1503,7 @@ function applyImport(parsed){
     }
     modules = buildModules(parsed.modules);
     suiteLoaded = true;
+    dirty = false; // freshly imported suite has no unsaved progress yet
     currentFilter = 'all';
     document.querySelectorAll('.stat-tile').forEach(t => t.classList.toggle('active', t.dataset.filter === 'all'));
     render();
