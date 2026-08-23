@@ -1,17 +1,204 @@
 <script setup>
-// Authenticated placeholder — Phase 3 only proves the route guard and
-// session wiring work end to end; the real dashboard (reports list, etc.)
-// is a later phase's job.
+// Real dashboard (Phase 4): the reports the current user is a member of,
+// the create-report import pipeline, and quick per-report actions gated
+// by role. Manage Access (member list + role edits + invites) lives on
+// ReportView.vue, since it's scoped to one report.
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
+import { useReports } from '../stores/useReports'
+import { useTheme } from '../composables/useTheme'
 import Icon from '../components/icons/Icon.vue'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
+const { fetchMyReports, getMyRole, createReport, archiveReport, unarchiveReport, inviteMember } =
+  useReports()
+const { theme, toggleTheme } = useTheme()
+
+const loading = ref(true)
+const loadError = ref('')
+const reports = ref([])
+const showArchived = ref(false)
+
+const activeReports = computed(() => reports.value.filter((r) => !r.archived_at))
+const archivedReports = computed(() => reports.value.filter((r) => r.archived_at))
+
+async function loadReports() {
+  loading.value = true
+  loadError.value = ''
+  const { data, error } = await fetchMyReports()
+  loading.value = false
+  if (error) {
+    loadError.value = error.message || 'Could not load your reports.'
+    return
+  }
+  reports.value = data
+}
+
+onMounted(loadReports)
+
+function myRole(report) {
+  return getMyRole(report, user.value?.id)
+}
+
+function statsOf(report) {
+  return (
+    report.stats || {
+      total_tests: 0,
+      pass_count: 0,
+      fail_count: 0,
+      pending_count: 0,
+      pass_percent: 0,
+    }
+  )
+}
 
 async function handleSignOut() {
   await signOut()
   router.push('/login')
+}
+
+function openReport(id) {
+  router.push(`/reports/${id}`)
+}
+
+// ---------------------------------------------------------------------
+// Toast (inline, no alert())
+// ---------------------------------------------------------------------
+const toastMessage = ref('')
+const toastVisible = ref(false)
+let toastTimer = null
+function showToast(message) {
+  toastMessage.value = message
+  toastVisible.value = true
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false
+  }, 3200)
+}
+
+// ---------------------------------------------------------------------
+// "Your User ID" — the only way anyone (owner or a would-be invitee) can
+// get a user_id to invite/be-invited with; see useReports.js's inviteMember
+// doc comment for why this exists.
+// ---------------------------------------------------------------------
+async function copyMyId() {
+  try {
+    await navigator.clipboard.writeText(user.value.id)
+    showToast('User ID copied.')
+  } catch {
+    showToast('Could not copy automatically — select and copy the ID manually.')
+  }
+}
+
+// ---------------------------------------------------------------------
+// Create-report modal: title -> JSON file -> (create pipeline) -> optional
+// invite-teammates sub-step.
+// ---------------------------------------------------------------------
+const createOpen = ref(false)
+const createStep = ref('form') // 'form' | 'invite'
+const newTitle = ref('')
+const newFile = ref(null)
+const createBusy = ref(false)
+const createError = ref('')
+const createdReportId = ref(null)
+const createdReportTitle = ref('')
+
+function openCreateModal() {
+  createOpen.value = true
+  createStep.value = 'form'
+  newTitle.value = ''
+  newFile.value = null
+  createError.value = ''
+  createdReportId.value = null
+}
+
+function closeCreateModal() {
+  createOpen.value = false
+}
+
+function handleFileChange(event) {
+  newFile.value = event.target.files?.[0] || null
+}
+
+async function submitCreate() {
+  createError.value = ''
+  if (!newTitle.value.trim()) {
+    createError.value = 'Give this report a title.'
+    return
+  }
+  if (!newFile.value) {
+    createError.value = 'Choose a JSON file to import.'
+    return
+  }
+
+  createBusy.value = true
+  const { data, error } = await createReport(newTitle.value.trim(), newFile.value, user.value.id)
+  createBusy.value = false
+
+  if (error) {
+    createError.value = error
+    return
+  }
+
+  createdReportId.value = data.id
+  createdReportTitle.value = data.title
+  createStep.value = 'invite'
+  await loadReports()
+}
+
+function finishCreate() {
+  closeCreateModal()
+  showToast('Report created.')
+}
+
+// Invite sub-step, right after a successful create.
+const inviteValue = ref('')
+const inviteRole = ref('viewer')
+const inviteBusy = ref(false)
+const inviteError = ref('')
+const inviteSuccess = ref('')
+
+async function submitInvite() {
+  inviteError.value = ''
+  inviteSuccess.value = ''
+  if (!inviteValue.value.trim()) {
+    inviteError.value = 'Enter a User ID.'
+    return
+  }
+  inviteBusy.value = true
+  const { error } = await inviteMember(createdReportId.value, inviteValue.value, inviteRole.value)
+  inviteBusy.value = false
+  if (error) {
+    inviteError.value = error
+    return
+  }
+  inviteSuccess.value = 'Member added.'
+  inviteValue.value = ''
+}
+
+// ---------------------------------------------------------------------
+// Archive ("Delete") / restore — soft delete only, see useReports.js.
+// ---------------------------------------------------------------------
+async function handleArchive(report) {
+  const { error } = await archiveReport(report.id)
+  if (error) {
+    showToast(error.message || 'Could not delete report.')
+    return
+  }
+  await loadReports()
+  showToast('Report deleted.')
+}
+
+async function handleUnarchive(report) {
+  const { error } = await unarchiveReport(report.id)
+  if (error) {
+    showToast(error.message || 'Could not restore report.')
+    return
+  }
+  await loadReports()
+  showToast('Report restored.')
 }
 </script>
 
@@ -24,8 +211,22 @@ async function handleSignOut() {
           <h1>Dashboard</h1>
         </div>
         <div class="head-actions">
+          <span class="your-id-chip" :title="user?.id">
+            Your ID: {{ user?.id?.slice(0, 8) }}…
+            <button type="button" aria-label="Copy your User ID" @click="copyMyId">
+              <Icon name="copy" cls="icon-sm" />
+            </button>
+          </span>
+          <button class="btn" type="button" @click="toggleTheme">
+            <Icon :name="theme === 'dark' ? 'sun' : 'moon'" />
+            <span class="btn-label">{{ theme === 'dark' ? 'Light' : 'Dark' }}</span>
+          </button>
+          <button class="btn primary" type="button" @click="openCreateModal">
+            <Icon name="plus" />
+            <span class="btn-label">New report</span>
+          </button>
           <button class="btn" type="button" @click="handleSignOut">
-            <Icon name="lock" />
+            <Icon name="logOut" />
             <span class="btn-label">Log out</span>
           </button>
         </div>
@@ -34,15 +235,216 @@ async function handleSignOut() {
   </div>
 
   <main>
-    <div class="empty-state">
+    <div v-if="loading" class="empty-state">
+      <p class="empty-hint">Loading your reports…</p>
+    </div>
+
+    <div v-else-if="loadError" class="empty-state">
+      <p class="auth-error">{{ loadError }}</p>
+      <div class="empty-actions">
+        <button class="btn" type="button" @click="loadReports">Try again</button>
+      </div>
+    </div>
+
+    <div v-else-if="activeReports.length === 0" class="empty-state empty-state--empty-suite">
       <div class="empty-icon">
         <Icon name="fileJson" cls="icon-lg" />
       </div>
-      <h2 class="empty-title">You're signed in</h2>
+      <h2 class="empty-title">No reports yet</h2>
       <p class="empty-hint">
-        Logged in as <strong>{{ user?.email }}</strong>. Reports and modules
-        land here in a later phase.
+        Create your first report by importing a QA test-suite JSON file (see
+        <code>sample.json</code> in the repo for the expected shape).
       </p>
+      <div class="empty-actions">
+        <button class="btn primary" type="button" @click="openCreateModal">
+          <Icon name="plus" />
+          <span class="btn-label">New report</span>
+        </button>
+      </div>
     </div>
+
+    <div v-else class="report-grid">
+      <div v-for="report in activeReports" :key="report.id" class="report-card">
+        <div class="report-card-head">
+          <div>
+            <h2 class="report-card-title">{{ report.title }}</h2>
+            <p class="report-card-meta">{{ new Date(report.created_at).toLocaleDateString() }}</p>
+          </div>
+          <span class="role-badge" :class="myRole(report)">{{ myRole(report) }}</span>
+        </div>
+
+        <div v-if="statsOf(report).total_tests === 0" class="report-card-empty">
+          No tests in this report yet.
+        </div>
+        <template v-else>
+          <div class="stat-grid report-card-stats">
+            <div class="stat-tile total">
+              <div class="stat-label">Total</div>
+              <div class="stat-value">{{ statsOf(report).total_tests }}</div>
+            </div>
+            <div class="stat-tile passed">
+              <div class="stat-label">Pass</div>
+              <div class="stat-value">{{ statsOf(report).pass_count }}</div>
+            </div>
+            <div class="stat-tile failed">
+              <div class="stat-label">Fail</div>
+              <div class="stat-value">{{ statsOf(report).fail_count }}</div>
+            </div>
+            <div class="stat-tile percent">
+              <div class="stat-label">Pass %</div>
+              <div class="stat-value">{{ statsOf(report).pass_percent }}%</div>
+            </div>
+          </div>
+          <div class="progress-track mini">
+            <div
+              class="progress-fill"
+              :style="{ width: statsOf(report).pass_percent + '%' }"
+            ></div>
+            <div class="progress-label">{{ statsOf(report).pass_percent }}% passed</div>
+          </div>
+        </template>
+
+        <div class="report-card-actions">
+          <button class="btn" type="button" @click="openReport(report.id)">Open</button>
+          <button
+            v-if="myRole(report) === 'owner'"
+            class="btn"
+            type="button"
+            @click="openReport(report.id)"
+          >
+            <Icon name="users" cls="icon-sm" />
+            <span class="btn-label">Manage access</span>
+          </button>
+          <button
+            v-if="myRole(report) === 'owner'"
+            class="btn danger"
+            type="button"
+            @click="handleArchive(report)"
+          >
+            <Icon name="trash2" cls="icon-sm" />
+            <span class="btn-label">Delete</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <template v-if="archivedReports.length > 0">
+      <button class="section-toggle" type="button" @click="showArchived = !showArchived">
+        {{ showArchived ? 'Hide' : 'Show' }} deleted reports ({{ archivedReports.length }})
+      </button>
+      <div v-if="showArchived" class="report-grid">
+        <div v-for="report in archivedReports" :key="report.id" class="report-card">
+          <div class="report-card-head">
+            <div>
+              <h2 class="report-card-title">{{ report.title }}</h2>
+              <p class="report-card-meta">Deleted {{ new Date(report.archived_at).toLocaleDateString() }}</p>
+            </div>
+            <span class="archived-badge">Deleted</span>
+          </div>
+          <div class="report-card-actions">
+            <button
+              v-if="myRole(report) === 'owner'"
+              class="btn"
+              type="button"
+              @click="handleUnarchive(report)"
+            >
+              <Icon name="rotateCcw" cls="icon-sm" />
+              <span class="btn-label">Restore</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
   </main>
+
+  <!-- Create-report modal -->
+  <div class="modal-overlay" :class="{ open: createOpen }">
+    <div class="modal-box modal-box--form">
+      <template v-if="createStep === 'form'">
+        <h2>New report</h2>
+        <p v-if="createError" class="auth-error">{{ createError }}</p>
+
+        <div class="auth-field">
+          <label class="auth-label" for="new-report-title">Title</label>
+          <input
+            id="new-report-title"
+            v-model="newTitle"
+            type="text"
+            class="auth-input"
+            :disabled="createBusy"
+            placeholder="e.g. Onboarding — Q3 regression"
+          />
+        </div>
+
+        <div class="auth-field">
+          <label class="auth-label" for="new-report-file">Test-suite JSON file</label>
+          <input
+            id="new-report-file"
+            type="file"
+            accept=".json,application/json"
+            class="auth-input"
+            :disabled="createBusy"
+            @change="handleFileChange"
+          />
+          <p class="field-hint">
+            Must match the legacy export shape — see <code>sample.json</code> in the repo root.
+          </p>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" type="button" :disabled="createBusy" @click="closeCreateModal">
+            Cancel
+          </button>
+          <button class="btn primary" type="button" :disabled="createBusy" @click="submitCreate">
+            {{ createBusy ? 'Creating…' : 'Create report' }}
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <h2>{{ createdReportTitle }} created</h2>
+        <p class="empty-hint" style="margin: 0 0 14px; text-align: left">
+          Invite a teammate now, or do it later from the report's Manage Access panel.
+        </p>
+
+        <p v-if="inviteError" class="auth-error">{{ inviteError }}</p>
+        <p v-if="inviteSuccess" class="auth-success">{{ inviteSuccess }}</p>
+
+        <div class="auth-field">
+          <label class="auth-label" for="invite-id">Teammate's User ID</label>
+          <input
+            id="invite-id"
+            v-model="inviteValue"
+            type="text"
+            class="auth-input"
+            :disabled="inviteBusy"
+            placeholder="00000000-0000-0000-0000-000000000000"
+          />
+          <p class="field-hint">
+            They can find this on their own Dashboard ("Your ID" in the header) once they've
+            signed in — we can't look accounts up by email (see FEATURES.md / phase notes).
+          </p>
+        </div>
+
+        <div class="auth-field">
+          <label class="auth-label" for="invite-role">Role</label>
+          <select id="invite-role" v-model="inviteRole" class="auth-input" :disabled="inviteBusy">
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" type="button" @click="finishCreate">Done</button>
+          <button class="btn primary" type="button" :disabled="inviteBusy" @click="submitInvite">
+            {{ inviteBusy ? 'Adding…' : 'Add member' }}
+          </button>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <div class="toast" :class="{ show: toastVisible }">
+    <span class="toast-msg">{{ toastMessage }}</span>
+  </div>
 </template>
