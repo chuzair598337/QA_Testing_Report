@@ -151,7 +151,6 @@ no manual build step:
 | `Makefile` (repo root) | `make dev`/`build`/`preview`/`install`/`clean`/`status` — wraps `cd app && npm run <x>` so you don't have to. |
 | `vue-migration-test-suite.json` | A living regression-test suite (same schema as below) covering this migration's own phases — import it into the app to track its own QA. |
 | `sample.json` | Demo test-case data, same schema, used by the create-report flow's own tests. |
-| `index.html`, `js/`, `css/` | The legacy static app — superseded by `app/`, kept only until removal is confirmed. |
 
 No GitHub Actions workflow — Vercel's native Git integration handles builds
 (see [Deployment](#deployment)); the legacy `.github/workflows/pages.yml`
