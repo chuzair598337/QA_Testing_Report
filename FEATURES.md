@@ -70,6 +70,11 @@ graduate the way Coming Soon bullets are.
   expanded during PDF export (the live UI keeps it collapsed), each locked
   test row also carries its own lock icon there, not just a border/opacity
   dim, so it stays unambiguous in a printed/exported report.
+- **Pin/lock icons are bold and red** (`--fail`, theme-aware — same in
+  light and dark mode) and drawn larger than the default icon size, so
+  they actually read at a glance next to a title instead of blending in;
+  pin and lock share the same color now, told apart by icon shape (pin vs.
+  padlock) rather than color.
 - **Jump navigation** — dropdowns to jump straight to a module or
   sub-module, auto-expanding it and scrolling it into view.
 - **Bulk actions** — "Mark all Pass" / "Mark all Fail" / "Mark all Pending"
@@ -129,13 +134,27 @@ graduate the way Coming Soon bullets are.
   breakpoint, with a further density tier at `680px` and the most
   aggressive shrink at `480px`; touch-friendly controls throughout. The
   import-replace confirm dialog's Export/Discard action row stacks
-  full-width below `480px` instead of squeezing side by side.
+  full-width below `480px` instead of squeezing side by side. The sticky
+  header (`.head-chrome`) is a top-level element, not nested inside a
+  tightly-fit wrapper — CSS sticky positioning is bounded by its
+  containing block's own extent, so nesting it inside a short wrapper
+  would let it detach and scroll away once that wrapper's box (shrunk
+  further by the KPI block collapsing on scroll) had fully scrolled past.
 - **Collapsible KPI/progress/jump-nav on scroll** — that block hides while
   scrolling down through the test list and reappears on scroll-up or near
   the top, giving short/landscape screens their vertical space back without
   losing the sticky title/actions row above it.
 - **Toast notifications** for transient feedback (e.g. empty-report
-  gate) that auto-dismiss.
+  gate, Reset-all Undo) that auto-dismiss. Appears from the top, positioned
+  dynamically just below whatever header chrome is actually visible right
+  now (title/actions row, plus the KPI/search/jump block when it's still
+  in view) so it never covers real controls — not a fixed pixel offset.
+  Full-width (minor horizontal margin) below the `480px` breakpoint instead
+  of a centered pill.
+- **Disabled buttons show a "not-allowed" cursor**, not a loading spinner —
+  Export/Reset (and any other disabled `.btn`) previously used
+  `cursor:progress`, which reads as "something is loading" when the
+  control is simply unavailable (e.g. no suite loaded yet).
 - **Empty states** for: nothing imported yet, a JSON file with no test
   cases, and a filter with no matches — each with a relevant action to
   recover (Import, Load sample data, Show all cases).

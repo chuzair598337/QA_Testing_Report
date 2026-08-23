@@ -304,4 +304,18 @@
   .confirm-export-wrap .export-menu.open {
     display: block;
   }
+
+  /* Full-width toast (minor horizontal margin) instead of a centered pill —
+     a floating narrow pill reads cramped once it carries an action button
+     (e.g. the Reset-all Undo toast) on a phone-width screen. */
+  .toast {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    width: auto;
+    transform: translateY(-100px);
+  }
+  .toast.show {
+    transform: translateY(0);
+  }
 }

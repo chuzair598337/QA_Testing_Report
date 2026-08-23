@@ -1023,6 +1023,26 @@ let toastActionHandler = null;
 function showToast(message, duration = 3000, action){
   toastMsg.textContent = message;
 
+  // Sit just below whatever header chrome is actually visible right now,
+  // instead of a fixed viewport offset — the header's height varies
+  // (suite loaded or not, scrolled past the KPI block or not, mobile
+  // hamburger vs. desktop action row), and a fixed offset ends up
+  // overlapping real content/controls in several of those states.
+  // .head-chrome is sticky-pinned at the top, so its bottom edge is
+  // always where the title/actions row actually ends; .head-metrics
+  // (KPI cards/progress/search/jump nav) isn't sticky, so its bottom
+  // only matters while it's still scrolled into view — once the page
+  // scrolls past it, its rect goes non-positive and chromeBottom (always
+  // positive) wins instead. When no suite is loaded .head-metrics is
+  // display:none, giving a zero rect that never wins over chromeBottom.
+  const headChrome = document.querySelector('.head-chrome');
+  const headMetrics = document.querySelector('.head-metrics');
+  if (headChrome){
+    const chromeBottom = headChrome.getBoundingClientRect().bottom;
+    const metricsBottom = headMetrics ? headMetrics.getBoundingClientRect().bottom : 0;
+    toast.style.top = (Math.max(chromeBottom, metricsBottom) + 12) + 'px';
+  }
+
   if (toastActionHandler){
     toastActionBtn.removeEventListener('click', toastActionHandler);
     toastActionHandler = null;

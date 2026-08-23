@@ -79,11 +79,6 @@
   .icon-md{ width:16px; height:16px; }
 
   /* ---------- Header / Dashboard ---------- */
-  header.report-head{
-    background:transparent;
-    border:none;
-    box-shadow:none;
-  }
   .head-chrome{
     position:sticky;
     top:0;
@@ -224,7 +219,11 @@
     color:var(--fail);
   }
   button.btn.danger:hover{ background:var(--fail-bg); }
-  button.btn[disabled]{ opacity:.6; cursor:progress; }
+  /* cursor:progress reads as "something is loading, wait" — wrong for a
+     control that's simply unavailable right now (no suite loaded yet).
+     not-allowed is the correct semantic cursor for that; PDF export's own
+     'Generating…' state sets its own cursor separately, not via this rule. */
+  button.btn[disabled]{ opacity:.6; cursor:not-allowed; }
 
   /* Stat tiles */
   .stat-grid{
@@ -584,10 +583,23 @@
      menu inside is open, and outrank the next module card while doing so. */
   .module.menu-open{ overflow:visible; position:relative; z-index:40; }
 
-  .lock-badge{ display:inline-flex; color:var(--primary); flex-shrink:0; }
-  /* Distinct color from .lock-badge so a module/sub-module that's both
-     pinned and locked still reads as two separate signals, not one blur. */
-  .pin-badge{ display:inline-flex; color:var(--accent); flex-shrink:0; }
+  /* Pin/lock badges next to a module/sub-module title: red (var(--fail),
+     theme-aware) and drawn bolder/bigger than the default 12px icon so
+     they actually read at a glance instead of blending into the title
+     row — the icon shape (pin vs. padlock) is what tells pinned and
+     locked apart now that both use the same color. */
+  .lock-badge,
+  .pin-badge{
+    display:inline-flex;
+    color:var(--fail);
+    flex-shrink:0;
+  }
+  .lock-badge .icon,
+  .pin-badge .icon{
+    width:15px;
+    height:15px;
+    stroke-width:2.75;
+  }
 
   .submodule{
     padding:0 18px;
@@ -762,8 +774,13 @@
   }
   .row-lock-badge{
     display:inline-flex;
-    color:var(--ink-faint);
+    color:var(--fail);
     flex-shrink:0;
+  }
+  .row-lock-badge .icon{
+    width:15px;
+    height:15px;
+    stroke-width:2.75;
   }
 
   .test-main{
@@ -944,7 +961,6 @@
 
   /* Applied while html2pdf is capturing the page */
   body.generating-pdf .head-chrome{ position:static; box-shadow:none; }
-  body.generating-pdf header.report-head{ box-shadow:none; }
   body.generating-pdf .head-actions,
   body.generating-pdf .nav-toggle,
   body.generating-pdf .note-toggle,
@@ -1255,9 +1271,9 @@
   /* ---------- Toast notification ---------- */
   .toast{
     position:fixed;
-    bottom:24px;
+    top:20px;
     left:50%;
-    transform:translateX(-50%) translateY(100px);
+    transform:translateX(-50%) translateY(-100px);
     background:var(--surface);
     color:var(--ink);
     padding:12px 14px 12px 20px;
