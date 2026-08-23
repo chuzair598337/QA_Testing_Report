@@ -23,36 +23,54 @@ both places at once.
 declined — kept for reference so they don't get re-proposed, not expected to
 graduate the way Coming Soon bullets are.
 
+## Accounts & access
+
+- **Sign up / log in** — email + password, magic link, or Google OAuth.
+  Password reset via emailed link. Sessions persist via `supabase-js`'s
+  default `localStorage`-backed session — the one deliberate reversal of
+  the legacy app's "no `localStorage`" rule.
+- **Known limitation:** confirmation/magic-link/invite/reset-password
+  emails currently use Supabase's default templates, which only work
+  reliably when opened on the same browser/device that requested them
+  (see README's [Invites & RBAC](README.md#invites--rbac) section).
+- **Dashboard** — every report you're a member of, newest first, each with
+  its own stat tiles (Total/Pass/Fail/Pass %), a mini progress bar, and
+  your role badge. Owner-only quick actions (Manage access, Delete) are
+  hidden for editors/viewers.
+- **Create report** — a title plus a JSON test-case file (same schema as
+  always — see README). Validated client-side, then: the report row is
+  created, the raw file is archived to a private Storage bucket, and the
+  parsed modules/sub-modules/tests are written to Postgres — all rolled
+  back together if any step fails, so a bad import never leaves a
+  half-created report behind.
+- **Invite by email** — an owner invites a teammate as Editor or Viewer.
+  An existing account is added immediately; a brand-new email gets an
+  invite email and is attached automatically once they finish signing up.
+- **Owner / Editor / Viewer roles**, enforced server-side (RLS is the real
+  boundary, not the UI): owners manage membership, structure, and
+  archive/delete; editors can update a test's status/note only; viewers are
+  read-only. A sole owner can't accidentally demote or remove themselves
+  out of their own report.
+- **Manage Access panel** — member list with role dropdowns and a remove
+  action, reached from the report view.
+- **Archive / restore** — "Delete" is a soft delete (`archived_at`), hidden
+  from the Dashboard by default behind a "Show deleted reports" toggle,
+  with an owner-only Restore action. No hard delete exists.
+
 ## Core workflow
 
-- **Import** — loads a test-case JSON file (schema in README) into an
-  interactive checklist. Malformed JSON or a payload missing a required
-  field is rejected with an alert; nothing already loaded is touched.
-- **Drag-and-drop import** — dropping a `.json` file anywhere on the page
-  imports it the same way as the Import button, with a full-page dropzone
-  overlay while dragging.
+- **Import** (at report-creation time) — loads a test-case JSON file
+  (schema in README) into the new report. Malformed JSON or a payload
+  missing a required field is rejected inline; nothing is written until
+  the whole file validates.
 - **Pass / Fail / Pending status** per test case, plus an optional free-text
-  note, editable inline.
+  note, editable inline. Status saves immediately; notes autosave ~500ms
+  after you stop typing. Both persist across reload and across devices —
+  everyone with access sees the same live state.
 - **Export → Download JSON** — downloads the current suite (same schema,
   every test's `status`/`note` filled in) to send back to dev.
 - **Export → Download PDF** — a printable snapshot of the current state
   (everything expanded, filters cleared) via `html2pdf.js`.
-- **Reset all** — sets every test back to Pending and clears all notes,
-  behind a confirmation prompt. One-level Undo: a toast with an Undo action
-  appears right after, restoring every status/note exactly as it was
-  before the reset. Cleared on the next import (a stale snapshot from a
-  different suite must not resurrect into the new one) and superseded by
-  the next reset (only the most recent one is undoable).
-- **In-memory only, no persistence** — no `localStorage`, no backend.
-  Closing or reloading the tab without exporting first loses in-progress
-  work by design. A `beforeunload` prompt warns before that happens while a
-  suite is loaded.
-- **Import-overwrite guard** — replacing an already-loaded suite asks for
-  confirmation, with inline "export current work first" buttons (PDF/JSON/
-  Report) so nothing is lost by accident.
-- **Sample data** — an optional "Load sample data" action on the empty
-  state, loading `sample.json`; only shown when `config.json`'s
-  `showSample` is `true`.
 
 ## Organization & navigation
 
@@ -152,28 +170,61 @@ graduate the way Coming Soon bullets are.
   Full-width (minor horizontal margin) below the `480px` breakpoint instead
   of a centered pill.
 - **Disabled buttons show a "not-allowed" cursor**, not a loading spinner —
-  Export/Reset (and any other disabled `.btn`) previously used
+  Export (and any other disabled `.btn`) previously used
   `cursor:progress`, which reads as "something is loading" when the
   control is simply unavailable (e.g. no suite loaded yet).
-- **Empty states** for: nothing imported yet, a JSON file with no test
-  cases, and a filter with no matches — each with a relevant action to
-  recover (Import, Load sample data, Show all cases).
+- **Empty states** for: a report you're not a member of / doesn't exist (a
+  friendly access-denied message, still a real page — not a 404), a JSON
+  file with no test cases, and a filter with no matches (Show all cases).
 - Suite-wide chrome (KPI cards, filters, jump nav, pinned bar) stays hidden
-  until a suite is loaded, then shows even if that suite has zero tests.
+  until a report finishes loading, then shows even if it has zero tests.
 
 ## Safety
 
-- **HTML-escaping** on every imported title/test-text/note before it's
-  inserted into the page, so characters like `<`/`>` in test data can't
-  break rendering or inject markup.
-- **No external dependency** beyond `html2pdf.js` (loaded from cdnjs, used
-  only by Download PDF) — everything else is this repo's own HTML/CSS/JS.
+- **HTML-escaping** on every test title/test-text/note is inherent to how
+  Vue renders text (template interpolation escapes by default) — a
+  `<`/`>` in test data can't break rendering or inject markup.
+- **Row Level Security (RLS) is the real access-control boundary** — every
+  role check the UI does (disabled controls, hidden panels) is a
+  convenience; Postgres policies are what actually accept or reject a
+  request, checked server-side regardless of what the client sends.
+- **The service-role key never reaches the browser** — the one operation
+  that needs it (email-based invites) runs in a Supabase Edge Function,
+  not client code.
+- **`html2pdf.js` is a regular npm dependency**, code-split into its own
+  chunk so it only loads when Download PDF is actually used — no CDN
+  script tag.
 
 ## Coming Soon Features
 
 Proposed, not yet built. See the note at the top of this file for how a
 bullet graduates out of this section once it ships.
 
+- **Cross-device confirmation/invite/reset links** — customize Supabase's
+  email templates to use a `token_hash`-based link instead of the default
+  PKCE code-exchange one, so these links work regardless of what
+  browser/device opens them. Needs either a Supabase Pro-plan upgrade or a
+  custom Send Email hook (both were deferred for v1) — see README's
+  [Invites & RBAC](README.md#invites--rbac) section.
+- **Leaked-password protection** — Supabase's HaveIBeenPwned check, a
+  Pro-plan-and-above feature. Free plan for v1; flip on anytime after
+  upgrading, no migration needed.
+- **Separate Supabase project for Preview deployments** — Preview and
+  Production currently share one project/database. Worth doing if isolated
+  preview data ever actually matters; not needed for v1.
+- **Re-import over an existing report** — replacing an already-created
+  report's test data with a revised JSON file, in place, rather than only
+  at creation time. The RLS policies already allow owner-only structural
+  writes that this would use; the UI flow itself isn't built yet.
+- **Member display names in Manage Access** — members are currently shown
+  by raw User ID (no `profiles` table exists yet to resolve one to an
+  email/display name).
+- **Reset all** — the legacy app's "set every test back to Pending, clear
+  all notes" action (with a one-level Undo) wasn't carried over in this
+  migration; re-add if the workflow needs it.
+- **Drag-and-drop file picker** for the create-report JSON upload — the
+  legacy app's drag-anywhere-on-the-page import wasn't carried over; report
+  creation currently uses a plain file input.
 - **Ad-hoc multi-select bulk actions** — a checkbox-based selection across
   arbitrary test rows (not just a whole module/sub-module) with its own
   bulk-mark toolbar. Deferred v2 of the module/sub-module-level bulk
