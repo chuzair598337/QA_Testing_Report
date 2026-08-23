@@ -52,10 +52,26 @@ provide('treeUi', treeUi)
 provide('canEdit', canEditTests)
 
 async function load() {
-  await runner.load(reportId)
+  const { error } = await runner.load(reportId)
+  // Legacy CSS (ported unchanged into base.css) gates the whole metrics
+  // chrome — stat tiles, progress bar, jump-nav, filters, pinned bar,
+  // all of it lives inside .head-metrics/.head-top — behind
+  // `body:not(.suite-loaded)`. The legacy static app added this class to
+  // <body> the moment a suite finished loading; that step was never
+  // ported here, so all of that chrome was permanently invisible
+  // regardless of whether the report itself loaded fine. Add it only on
+  // a successful load (an access-denied/not-found report has no tree to
+  // show metrics for), and clean it up on unmount so it doesn't leak
+  // onto other routes sharing the same <body>.
+  if (!error) {
+    document.body.classList.add('suite-loaded')
+  }
 }
 
 onMounted(load)
+onUnmounted(() => {
+  document.body.classList.remove('suite-loaded')
+})
 
 // ---------------------------------------------------------------------
 // Filters (KPI-card status filter + live search) — combine to hide
