@@ -926,6 +926,16 @@
   body.generating-pdf .module.filtered-out{ display:block; }
   body.generating-pdf #filter-empty{ display:none !important; }
   body.generating-pdf .module{ box-shadow:none; break-inside:avoid; }
+  /* The legacy app only avoided breaking inside a whole .module — fine
+     when modules are short, but a module with many sub-modules/tests is
+     routinely taller than one PDF page, so break-inside:avoid on the
+     module alone can't stop html2pdf's pagination from slicing straight
+     through the middle of a sub-module heading or a test row. Extending
+     the same rule one and two levels down keeps each sub-module and each
+     individual test-row intact even when the enclosing module has to
+     split across pages. */
+  body.generating-pdf .submodule{ break-inside:avoid; }
+  body.generating-pdf .test-row{ break-inside:avoid; }
 
   /* Hide KPI / jump nav until a JSON suite is loaded */
   body:not(.suite-loaded) .head-metrics{
