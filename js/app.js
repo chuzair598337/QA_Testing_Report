@@ -58,6 +58,11 @@ let openMenuKey = null;
 let showSample = false;
 let suiteLoaded = false;
 let docTitle = docTitleEl.textContent;
+// True whenever the in-memory suite has changes not yet covered by a
+// Download JSON export — drives the beforeunload warning below so it only
+// fires for genuinely unsaved work, not on every reload after a suite has
+// already been exported.
+let dirty = false;
 
 /* Builds the numbered module/sub-module/test-row structure from a plain
    { title, subModules: [{ title, tests: [{ text, status?, note? }] }] }
@@ -578,6 +583,7 @@ function renderTestRow(t, locked){
     select.dataset.val = t.status;
     selectWrap.dataset.val = t.status;
     dot.className = 'status-dot ' + t.status;
+    dirty = true;
     updateStats();
   });
 
@@ -587,6 +593,7 @@ function renderTestRow(t, locked){
 
   textarea.addEventListener('input', () => {
     t.note = textarea.value;
+    dirty = true;
     noteToggle.classList.toggle('has-note', t.note.trim().length > 0);
   });
 
@@ -778,6 +785,7 @@ exportJsonBtn.addEventListener('click', () => closeMobileNav());
 exportReportBtn.addEventListener('click', () => closeMobileNav());
 
 function downloadJson(){
+  dirty = false;
   const payload = {
     docTitle: docTitle,
     modules: modules.map(mod => ({
@@ -876,14 +884,6 @@ const reportDownloadBtn = document.getElementById('report-download-btn');
 let latestReportMarkdown = '';
 let latestReportPlainText = '';
 let latestReportClipboardHtml = '';
-
-function escapeHtml(str){
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /* Which "Included test cases" checkboxes are on — set from the report
    settings panel (cog button in the report modal header). "all" and the
@@ -1317,6 +1317,7 @@ document.getElementById('reset-btn').addEventListener('click', () => {
     "This sets every test back to Pending and clears all notes. This can't be undone.",
     () => {
       allTests().forEach(t => { t.status = 'pending'; t.note = ''; });
+      dirty = false; // reset returns to the original imported (still-pending) state
       render();
     }
   );
@@ -1397,11 +1398,13 @@ function loadSample(){
     .catch(() => alert('Could not load sample.json.'));
 }
 
-/* Warn before closing/reloading the tab while a suite is loaded — there is no
-   persistence layer by design (see README), so this is the only guard
-   against losing in-progress work before Export. */
+/* Warn before closing/reloading the tab while there is unsaved progress —
+   there is no persistence layer by design (see README), so this is the only
+   guard against losing in-progress work before Export. Gated on `dirty`
+   (not just suiteLoaded) so it doesn't nag on every reload after a suite has
+   already been exported via Download JSON. */
 window.addEventListener('beforeunload', (e) => {
-  if (suiteLoaded){
+  if (suiteLoaded && dirty){
     e.preventDefault();
     e.returnValue = '';
   }

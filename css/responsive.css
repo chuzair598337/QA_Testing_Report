@@ -101,23 +101,6 @@
   .progress-label {
     font-size: 11px;
   }
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    padding-top: 10px;
-    margin-top: 10px;
-  }
-  .filter-group {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-  .filter-btn {
-    text-align: center;
-    padding: 8px 4px;
-  }
   .jump-group {
     width: 100%;
   }
@@ -208,10 +191,6 @@
   }
   .stat-tile .stat-value {
     font-size: 16px;
-  }
-  .filter-btn {
-    font-size: 10.5px;
-    padding: 8px 2px;
   }
   .module {
     scroll-margin-top: 88px;

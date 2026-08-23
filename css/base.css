@@ -304,34 +304,7 @@
   .progress-seg.pass{ background:var(--pass); height:100%; transition:width .25s ease; }
   .progress-seg.fail{ background:var(--fail); height:100%; transition:width .25s ease; }
 
-  /* Filter + jump nav */
-  .toolbar{
-    grid-column:1 / -1;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    flex-wrap:wrap;
-    padding-top:12px;
-    margin-top:12px;
-    border-top:1px solid var(--border);
-  }
-  .filter-group{ display:flex; gap:6px; flex-wrap:wrap; }
-  .filter-btn{
-    font-family:var(--mono);
-    font-size:11.5px;
-    padding:5px 10px;
-    border-radius:5px;
-    border:1px solid var(--border-strong);
-    background:var(--surface);
-    color:var(--ink-soft);
-    cursor:pointer;
-  }
-  .filter-btn.active{
-    background:var(--primary);
-    border-color:var(--primary);
-    color:#fff;
-  }
+  /* Jump nav */
   .jump-group{
     display:flex;
     gap:8px;
@@ -870,7 +843,6 @@
   body.generating-pdf .head-chrome{ position:static; box-shadow:none; }
   body.generating-pdf header.report-head{ box-shadow:none; }
   body.generating-pdf .head-actions,
-  body.generating-pdf .toolbar,
   body.generating-pdf .nav-toggle,
   body.generating-pdf .note-toggle,
   body.generating-pdf .chevron-icon,
@@ -883,8 +855,7 @@
   body.generating-pdf #filter-empty{ display:none !important; }
   body.generating-pdf .module{ box-shadow:none; break-inside:avoid; }
 
-  /* Hide KPI / filters / jump until a JSON suite is loaded */
-  body:not(.suite-loaded) .toolbar,
+  /* Hide KPI / jump nav until a JSON suite is loaded */
   body:not(.suite-loaded) .head-metrics{
     display:none !important;
   }
