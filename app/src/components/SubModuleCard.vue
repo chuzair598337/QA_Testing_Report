@@ -3,7 +3,7 @@
 // menu, mini pass/fail bar) + its test rows. Ported visually/behaviorally
 // from js/app.js's render() sub-module block (~line 616) and buildMenuWrap()
 // (~line 276, pin/lock + bulk-mark dropdown).
-import { inject, computed } from 'vue'
+import { inject, computed, ref, watch, nextTick } from 'vue'
 import Icon from './icons/Icon.vue'
 import TestRow from './TestRow.vue'
 
@@ -34,6 +34,22 @@ const collapsed = computed(() => {
 const menuKey = computed(() => `sub-${props.sm.id}`)
 const menuOpen = computed(() => treeUi.openMenuKey.value === menuKey.value)
 const bulkDisabled = computed(() => locked.value || props.sm.tests.length === 0 || !canEdit.value)
+
+// Same overflow:hidden-clipping fix as ModuleCard.vue's menu — see its
+// comment for the full explanation. .submodule doesn't set overflow:hidden
+// itself, but nests inside .module which does, so it's clipped the same way.
+const triggerRef = ref(null)
+const menuStyle = ref({})
+watch(menuOpen, async (isOpen) => {
+  if (!isOpen) return
+  await nextTick()
+  const rect = triggerRef.value?.getBoundingClientRect()
+  if (!rect) return
+  menuStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    right: `${window.innerWidth - rect.right}px`,
+  }
+})
 
 function toggleMenu(e) {
   e.stopPropagation()
@@ -73,6 +89,7 @@ function pct(count, total) {
       <div class="submodule-meta" @click.stop>
         <div class="menu-wrap">
           <button
+            ref="triggerRef"
             type="button"
             class="icon-btn"
             :class="{ 'active-state': pinned || locked }"
@@ -83,26 +100,33 @@ function pct(count, total) {
           >
             <Icon name="ellipsisVertical" />
           </button>
-          <div class="dropdown-menu" :class="{ open: menuOpen }" :inert="!menuOpen">
-            <button type="button" class="dropdown-item" @click.stop="onPin">
-              <Icon :name="pinned ? 'pinOff' : 'pin'" cls="icon-sm" />
-              <span>{{ pinned ? 'Unpin' : 'Pin' }}</span>
-            </button>
-            <button type="button" class="dropdown-item" @click.stop="onLock">
-              <Icon :name="locked ? 'lockOpen' : 'lock'" cls="icon-sm" />
-              <span>{{ locked ? 'Unlock' : 'Lock' }}</span>
-            </button>
-            <div class="dropdown-divider"></div>
-            <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pass')">
-              <span class="status-dot pass"></span><span>Mark all Pass</span>
-            </button>
-            <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('fail')">
-              <span class="status-dot fail"></span><span>Mark all Fail</span>
-            </button>
-            <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pending')">
-              <span class="status-dot pending"></span><span>Mark all Pending</span>
-            </button>
-          </div>
+          <Teleport to="body">
+            <div
+              class="dropdown-menu dropdown-menu--floating"
+              :class="{ open: menuOpen }"
+              :style="menuStyle"
+              :inert="!menuOpen"
+            >
+              <button type="button" class="dropdown-item" @click.stop="onPin">
+                <Icon :name="pinned ? 'pinOff' : 'pin'" cls="icon-sm" />
+                <span>{{ pinned ? 'Unpin' : 'Pin' }}</span>
+              </button>
+              <button type="button" class="dropdown-item" @click.stop="onLock">
+                <Icon :name="locked ? 'lockOpen' : 'lock'" cls="icon-sm" />
+                <span>{{ locked ? 'Unlock' : 'Lock' }}</span>
+              </button>
+              <div class="dropdown-divider"></div>
+              <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pass')">
+                <span class="status-dot pass"></span><span>Mark all Pass</span>
+              </button>
+              <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('fail')">
+                <span class="status-dot fail"></span><span>Mark all Fail</span>
+              </button>
+              <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pending')">
+                <span class="status-dot pending"></span><span>Mark all Pending</span>
+              </button>
+            </div>
+          </Teleport>
         </div>
       </div>
 

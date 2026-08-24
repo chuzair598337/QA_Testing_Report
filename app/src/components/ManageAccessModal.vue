@@ -138,6 +138,12 @@ function onDocumentClick(e) {
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
+const hasActiveFilters = computed(() => search.value.trim() !== '' || filter.value !== 'all')
+function clearFilters() {
+  search.value = ''
+  filter.value = 'all'
+}
+
 const visibleRows = computed(() => {
   let list = rows.value
 
@@ -396,6 +402,9 @@ async function onRevoke(inviteId) {
               </button>
             </div>
           </div>
+          <button v-if="hasActiveFilters" type="button" class="btn manage-access-clear" @click="clearFilters">
+            Clear
+          </button>
         </div>
 
         <p v-if="loadError" class="auth-error">{{ loadError }}</p>
@@ -416,6 +425,9 @@ async function onRevoke(inviteId) {
             <div class="empty-icon" aria-hidden="true"><Icon name="users" cls="icon-lg" /></div>
             <h2 class="empty-title">No members match</h2>
             <p class="empty-hint">Try a different search or filter.</p>
+            <div v-if="hasActiveFilters" class="empty-actions">
+              <button class="btn primary" type="button" @click="clearFilters">Clear search &amp; filter</button>
+            </div>
           </div>
           <MemberCard
             v-for="row in visibleRows"
