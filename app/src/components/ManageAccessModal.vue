@@ -5,7 +5,7 @@
 // transfer can change the CURRENT user's own role — something only the
 // parent (which computed myRole/isOwner from its own report load) can
 // refresh.
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useReportMembers } from '../composables/useReportMembers'
 import { useModalFocus } from '../composables/useModalFocus'
 import Icon from './icons/Icon.vue'
@@ -41,6 +41,12 @@ useModalFocus(
 const loading = ref(true)
 const loadError = ref('')
 const rows = ref([])
+// Whether the current viewer is a report owner — gates the role select/
+// trash/resend/revoke controls in MemberCard for every row that isn't
+// their own (their own row never shows those regardless, see MemberCard).
+const isOwnerViewer = computed(() =>
+  rows.value.some((r) => r.user_id === props.currentUserId && r.role === 'owner'),
+)
 // Local status line for Resend/Revoke/Remove feedback — this modal has no
 // toast/message channel today, so reuse the existing auth-error/
 // auth-success class pattern (see DashboardView.vue's invite feedback).
@@ -89,6 +95,11 @@ const search = ref('')
 const sort = ref('name')
 const filter = ref('all')
 
+const SORTS = [
+  { value: 'name', label: 'Name' },
+  { value: 'role', label: 'Role' },
+  { value: 'recent', label: 'Recently added' },
+]
 const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'owner', label: 'Owner' },
@@ -96,6 +107,36 @@ const FILTERS = [
   { value: 'viewer', label: 'Viewer' },
   { value: 'pending', label: 'Pending' },
 ]
+
+// Sort/filter as icon-button dropdowns (same .menu-wrap/.dropdown-menu/
+// .dropdown-item pattern as ReportView's Export menu — a plain local ref,
+// not the shared treeUi store, since this modal is self-contained).
+const sortMenuOpen = ref(false)
+const filterMenuOpen = ref(false)
+function toggleSortMenu() {
+  sortMenuOpen.value = !sortMenuOpen.value
+  filterMenuOpen.value = false
+}
+function toggleFilterMenu() {
+  filterMenuOpen.value = !filterMenuOpen.value
+  sortMenuOpen.value = false
+}
+function pickSort(value) {
+  sort.value = value
+  sortMenuOpen.value = false
+}
+function pickFilter(value) {
+  filter.value = value
+  filterMenuOpen.value = false
+}
+function onDocumentClick(e) {
+  if (!e.target.closest('.menu-wrap')) {
+    sortMenuOpen.value = false
+    filterMenuOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 const visibleRows = computed(() => {
   let list = rows.value
@@ -304,23 +345,57 @@ async function onRevoke(inviteId) {
               autocomplete="off"
             />
           </div>
-          <select v-model="sort" class="auth-input manage-access-sort" aria-label="Sort members">
-            <option value="name">Sort: Name</option>
-            <option value="role">Sort: Role</option>
-            <option value="recent">Sort: Recently added</option>
-          </select>
-        </div>
-        <div class="manage-access-filters">
-          <button
-            v-for="f in FILTERS"
-            :key="f.value"
-            type="button"
-            class="filter-chip"
-            :class="{ active: filter === f.value }"
-            @click="filter = f.value"
-          >
-            {{ f.label }}
-          </button>
+          <div class="menu-wrap">
+            <button
+              type="button"
+              class="icon-btn"
+              aria-haspopup="true"
+              :aria-expanded="sortMenuOpen"
+              title="Sort"
+              @click.stop="toggleSortMenu"
+            >
+              <Icon name="arrowUpDown" cls="icon-sm" />
+            </button>
+            <div class="dropdown-menu" :class="{ open: sortMenuOpen }" :inert="!sortMenuOpen">
+              <button
+                v-for="s in SORTS"
+                :key="s.value"
+                type="button"
+                class="dropdown-item"
+                :class="{ active: sort === s.value }"
+                @click.stop="pickSort(s.value)"
+              >
+                <span>{{ s.label }}</span>
+                <Icon v-if="sort === s.value" name="check" cls="icon-sm dropdown-item-check" />
+              </button>
+            </div>
+          </div>
+          <div class="menu-wrap">
+            <button
+              type="button"
+              class="icon-btn"
+              :class="{ 'active-state': filter !== 'all' }"
+              aria-haspopup="true"
+              :aria-expanded="filterMenuOpen"
+              title="Filter"
+              @click.stop="toggleFilterMenu"
+            >
+              <Icon name="filter" cls="icon-sm" />
+            </button>
+            <div class="dropdown-menu" :class="{ open: filterMenuOpen }" :inert="!filterMenuOpen">
+              <button
+                v-for="f in FILTERS"
+                :key="f.value"
+                type="button"
+                class="dropdown-item"
+                :class="{ active: filter === f.value }"
+                @click.stop="pickFilter(f.value)"
+              >
+                <span>{{ f.label }}</span>
+                <Icon v-if="filter === f.value" name="check" cls="icon-sm dropdown-item-check" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <p v-if="loadError" class="auth-error">{{ loadError }}</p>
@@ -337,12 +412,17 @@ async function onRevoke(inviteId) {
 
         <div class="manage-access-list">
           <p v-if="loading" class="empty-hint">Loading members…</p>
-          <p v-else-if="visibleRows.length === 0" class="empty-hint">No members match.</p>
+          <div v-else-if="visibleRows.length === 0" class="empty-state empty-state--filter">
+            <div class="empty-icon" aria-hidden="true"><Icon name="users" cls="icon-lg" /></div>
+            <h2 class="empty-title">No members match</h2>
+            <p class="empty-hint">Try a different search or filter.</p>
+          </div>
           <MemberCard
             v-for="row in visibleRows"
             :key="`${row.kind}-${row.id}`"
             :row="row"
             :is-self="row.user_id === currentUserId"
+            :can-manage="isOwnerViewer"
             :role-change-busy="!!roleChangeBusy[row.id]"
             @role-change="onRoleChange"
             @remove="onRemove"

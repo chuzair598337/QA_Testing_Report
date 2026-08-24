@@ -1427,6 +1427,7 @@
   .role-badge.editor{ background:var(--pending-bg); color:var(--ink-soft); }
   .role-badge.viewer{ background:var(--pending-bg); color:var(--ink-faint); }
   .role-badge.pending{ background:var(--pending-bg); color:var(--ink-soft); }
+  .role-badge.you{ background:var(--pending-bg); color:var(--ink-faint); font-size:9.5px; }
   .archived-badge{
     display:inline-flex;
     align-items:center;
@@ -1506,38 +1507,21 @@
   }
   .manage-access-toolbar{
     display:flex;
+    align-items:center;
     gap:8px;
-    margin-bottom:8px;
-  }
-  .manage-access-sort{
-    flex-shrink:0;
-    width:auto;
-  }
-  .manage-access-filters{
-    display:flex;
-    gap:6px;
-    flex-wrap:wrap;
     margin-bottom:12px;
   }
-  .filter-chip{
-    appearance:none;
-    border:1px solid var(--border-strong);
-    background:var(--surface);
-    color:var(--ink-soft);
-    font-family:var(--sans);
-    font-size:12px;
-    font-weight:600;
-    padding:5px 12px;
-    border-radius:999px;
-    cursor:pointer;
-    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  /* Search fills all remaining width once sort/filter are icon buttons —
+     overrides the generic .search-wrap's max-width:360px (shared with
+     ReportView's test-case search, which does need that cap). */
+  .manage-access-toolbar .search-wrap{
+    max-width:none;
   }
-  .filter-chip:hover{ background:var(--hover-bg); }
-  .filter-chip.active{
-    background:var(--primary);
-    border-color:var(--primary);
-    color:#fff;
-  }
+  /* Sort/filter dropdown-item active state (icon-btn.active-state on the
+     filter trigger already covers "a non-default filter is applied" —
+     this covers the selected row inside either open dropdown). */
+  .dropdown-item.active{ color:var(--primary); font-weight:700; }
+  .dropdown-item-check{ margin-left:auto; color:var(--primary); flex-shrink:0; }
   .manage-access-list{
     overflow-y:auto;
     flex:1 1 auto;
@@ -1586,15 +1570,13 @@
     display:flex;
     align-items:center;
     gap:6px;
+    min-width:0;
+  }
+  .member-card-name-text{
+    min-width:0;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
-  }
-  .member-you-tag{
-    font-family:var(--mono);
-    font-size:10.5px;
-    font-weight:600;
-    color:var(--ink-faint);
   }
   .member-card-email{
     font-family:var(--mono);
@@ -1614,6 +1596,17 @@
     align-items:center;
     gap:8px;
     flex-shrink:0;
+  }
+  /* Gap above Close — list and action row were touching. */
+  .modal-box--members .modal-actions{
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px solid var(--border);
+  }
+  /* Tighter empty state inside a compact modal vs. a full page. */
+  .modal-box--members .empty-state{
+    padding:32px 20px;
+    margin:0;
   }
 
   .report-detail-head{

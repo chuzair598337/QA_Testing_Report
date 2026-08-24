@@ -1,8 +1,9 @@
 <script setup>
 // Real dashboard (Phase 4): the reports the current user is a member of,
 // the create-report import pipeline, and quick per-report actions gated
-// by role. Manage Access (member list + role edits + invites) lives on
-// ReportView.vue, since it's scoped to one report.
+// by role. Manage Access (member list + role edits + invites) is the
+// shared, portable ManageAccessModal.vue — hosted directly here (opens in
+// place, no navigation) and also on ReportView.vue.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
@@ -11,6 +12,7 @@ import { useReportMembers } from '../composables/useReportMembers'
 import { useTheme } from '../composables/useTheme'
 import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/icons/Icon.vue'
+import ManageAccessModal from '../components/ManageAccessModal.vue'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
@@ -89,6 +91,21 @@ async function handleSignOut() {
 
 function openReport(id) {
   router.push(`/reports/${id}`)
+}
+
+// ---------------------------------------------------------------------
+// Manage Access modal — hosted here directly (not a navigate-then-open
+// flow): ManageAccessModal.vue is fully self-contained and only needs a
+// report id + the current user's id, so there's no reason to leave the
+// Dashboard just to see the member list.
+// ---------------------------------------------------------------------
+const manageAccessOpen = ref(false)
+// '' not null — ManageAccessModal's reportId prop is a required String;
+// this is the closed-state placeholder before any card's button is clicked.
+const manageAccessReportId = ref('')
+function openManageAccess(reportId) {
+  manageAccessReportId.value = reportId
+  manageAccessOpen.value = true
 }
 
 // ---------------------------------------------------------------------
@@ -349,7 +366,7 @@ async function handleUnarchive(report) {
             v-if="myRole(report) === 'owner'"
             class="btn"
             type="button"
-            @click="openReport(report.id)"
+            @click="openManageAccess(report.id)"
           >
             <Icon name="users" cls="icon-sm" />
             <span class="btn-label">Manage access</span>
@@ -488,6 +505,14 @@ async function handleUnarchive(report) {
       </template>
     </div>
   </div>
+
+  <ManageAccessModal
+    :open="manageAccessOpen"
+    :report-id="manageAccessReportId"
+    :current-user-id="user?.id"
+    @close="manageAccessOpen = false"
+    @membership-changed="loadReports"
+  />
 
   <div class="toast" :class="{ show: toastVisible }">
     <span class="toast-msg">{{ toastMessage }}</span>

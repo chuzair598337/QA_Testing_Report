@@ -8,6 +8,10 @@ import Icon from './icons/Icon.vue'
 const props = defineProps({
   row: { type: Object, required: true },
   isSelf: { type: Boolean, default: false },
+  // Whether the CURRENT VIEWER is a report owner and can act on this row.
+  // A self row never shows a select regardless of this (see template) —
+  // canManage only gates the select/trash/resend/revoke for OTHER rows.
+  canManage: { type: Boolean, default: false },
   roleChangeBusy: { type: Boolean, default: false },
 })
 const emit = defineEmits(['role-change', 'remove', 'resend', 'revoke'])
@@ -25,8 +29,6 @@ const initials = computed(() => {
     .map((part) => part[0]?.toUpperCase())
     .join('')
 })
-
-const selfLocked = computed(() => props.isSelf && props.row.role === 'owner')
 
 function onRoleChange(event) {
   const newRole = event.target.value
@@ -48,8 +50,8 @@ function relativeInviteAge(iso) {
       <div class="member-avatar" aria-hidden="true">{{ initials }}</div>
       <div class="member-card-text">
         <div class="member-card-name">
-          {{ displayName }}
-          <span v-if="isSelf" class="member-you-tag">(you)</span>
+          <span class="member-card-name-text">{{ displayName }}</span>
+          <span v-if="isSelf" class="role-badge you">(you)</span>
         </div>
         <div class="member-card-email">{{ row.email }}</div>
         <div v-if="row.status === 'pending'" class="member-invite-meta">
@@ -64,37 +66,38 @@ function relativeInviteAge(iso) {
     <div class="member-card-actions">
       <template v-if="row.status === 'pending'">
         <span class="role-badge pending">Pending</span>
-        <button type="button" class="btn" @click="emit('resend', row.id)">
-          <Icon name="rotateCcw" cls="icon-sm" />
-          <span>Resend</span>
-        </button>
-        <button type="button" class="btn danger" @click="emit('revoke', row.id)">
-          <Icon name="x" cls="icon-sm" />
-          <span>Revoke</span>
-        </button>
+        <template v-if="canManage">
+          <button type="button" class="btn" @click="emit('resend', row.id)">
+            <Icon name="rotateCcw" cls="icon-sm" />
+            <span>Resend</span>
+          </button>
+          <button type="button" class="btn danger" @click="emit('revoke', row.id)">
+            <Icon name="x" cls="icon-sm" />
+            <span>Revoke</span>
+          </button>
+        </template>
       </template>
-      <template v-else>
+      <template v-else-if="isSelf">
+        <span class="role-badge" :class="row.role">{{ row.role }}</span>
+      </template>
+      <template v-else-if="canManage">
         <select
           class="role-select"
           :value="row.role"
-          :disabled="selfLocked || roleChangeBusy"
-          :title="selfLocked ? 'Transfer ownership to change your own role' : ROLE_TOOLTIP"
+          :disabled="roleChangeBusy"
+          :title="ROLE_TOOLTIP"
           @change="onRoleChange"
         >
           <option value="owner">Owner</option>
           <option value="editor">Editor</option>
           <option value="viewer">Viewer</option>
         </select>
-        <button
-          type="button"
-          class="icon-btn"
-          :disabled="selfLocked"
-          :aria-label="selfLocked ? 'Remove member (disabled — transfer ownership first)' : 'Remove member'"
-          :title="selfLocked ? 'Transfer ownership before removing yourself' : 'Remove member'"
-          @click="emit('remove', row.id)"
-        >
+        <button type="button" class="icon-btn" aria-label="Remove member" title="Remove member" @click="emit('remove', row.id)">
           <Icon name="trash2" cls="icon-sm" />
         </button>
+      </template>
+      <template v-else>
+        <span class="role-badge" :class="row.role">{{ row.role }}</span>
       </template>
     </div>
   </div>
