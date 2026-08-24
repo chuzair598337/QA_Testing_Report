@@ -1426,6 +1426,7 @@
   .role-badge.owner{ background:var(--primary-soft); color:var(--primary); }
   .role-badge.editor{ background:var(--pending-bg); color:var(--ink-soft); }
   .role-badge.viewer{ background:var(--pending-bg); color:var(--ink-faint); }
+  .role-badge.pending{ background:var(--pending-bg); color:var(--ink-soft); }
   .archived-badge{
     display:inline-flex;
     align-items:center;
@@ -1466,37 +1467,6 @@
     color:var(--ink-faint);
   }
 
-  .member-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    padding:10px 0;
-    border-top:1px solid var(--border);
-    flex-wrap:wrap;
-  }
-  .member-row:first-of-type{ border-top:none; }
-  .member-row-id{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    min-width:0;
-    flex:1 1 auto;
-  }
-  .mono-id{
-    font-family:var(--mono);
-    font-size:12px;
-    color:var(--ink-soft);
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  .member-row-actions{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    flex-shrink:0;
-  }
   select.role-select{
     font-family:var(--mono);
     font-size:11.5px;
@@ -1509,31 +1479,142 @@
   }
   select.role-select:disabled{ cursor:not-allowed; opacity:.6; }
 
-  .your-id-chip{
-    display:inline-flex;
+  /* Manage Access module (2026-08-24 design spec) */
+  .modal-box--members{
+    max-width:560px;
+    width:100%;
+    max-height:min(88vh, 720px);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    text-align:left;
+  }
+  .manage-access-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:14px;
+  }
+  .manage-access-header h2{ margin:0; }
+  .manage-access-add-panel{
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:14px;
+    background:var(--surface-alt);
+  }
+  .manage-access-toolbar{
+    display:flex;
+    gap:8px;
+    margin-bottom:8px;
+  }
+  .manage-access-sort{
+    flex-shrink:0;
+    width:auto;
+  }
+  .manage-access-filters{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .filter-chip{
+    appearance:none;
+    border:1px solid var(--border-strong);
+    background:var(--surface);
+    color:var(--ink-soft);
+    font-family:var(--sans);
+    font-size:12px;
+    font-weight:600;
+    padding:5px 12px;
+    border-radius:999px;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .filter-chip:hover{ background:var(--hover-bg); }
+  .filter-chip.active{
+    background:var(--primary);
+    border-color:var(--primary);
+    color:#fff;
+  }
+  .manage-access-list{
+    overflow-y:auto;
+    flex:1 1 auto;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding-right:2px;
+  }
+  .member-card{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    flex-wrap:wrap;
+  }
+  .member-card.pending{ background:var(--surface-alt); }
+  .member-card-identity{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-width:0;
+    flex:1 1 auto;
+  }
+  .member-avatar{
+    flex-shrink:0;
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    background:var(--primary-soft);
+    color:var(--primary);
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .member-card-text{ min-width:0; }
+  .member-card-name{
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--ink);
+    display:flex;
     align-items:center;
     gap:6px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .member-you-tag{
+    font-family:var(--mono);
+    font-size:10.5px;
+    font-weight:600;
+    color:var(--ink-faint);
+  }
+  .member-card-email{
     font-family:var(--mono);
     font-size:11.5px;
     color:var(--ink-soft);
-    background:var(--pending-bg);
-    border:1px solid var(--border);
-    border-radius:999px;
-    padding:5px 6px 5px 12px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
   }
-  .your-id-chip button{
-    display:inline-flex;
+  .member-invite-meta{
+    font-size:11px;
+    color:var(--ink-faint);
+    margin-top:2px;
+  }
+  .member-card-actions{
+    display:flex;
     align-items:center;
-    justify-content:center;
-    width:22px;
-    height:22px;
-    border-radius:50%;
-    border:none;
-    background:none;
-    color:var(--ink-soft);
-    cursor:pointer;
+    gap:8px;
+    flex-shrink:0;
   }
-  .your-id-chip button:hover{ background:var(--hover-bg); color:var(--primary); }
 
   .report-detail-head{
     display:flex;
