@@ -1,14 +1,14 @@
 <script setup>
-// Settings modal — base shell + Profile + Theme + Logout (Task 5 of the
-// 2026-08-24 design spec). Bin section is a stub here; Task 6 fills in its
-// real recover/delete logic. Not wired into any view yet — Task 7 does
-// that.
+// Settings modal — Profile/Theme/Logout (Task 5) + Bin recover/permanent
+// delete (Task 6) of the 2026-08-24 design spec. Not wired into any view
+// yet — Task 7 does that.
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../stores/useAuth'
 import { useTheme } from '../composables/useTheme'
 import { useModalFocus } from '../composables/useModalFocus'
+import { useReports } from '../stores/useReports'
 import Icon from './icons/Icon.vue'
 import BusyOverlay from './BusyOverlay.vue'
 
@@ -20,6 +20,7 @@ const emit = defineEmits(['close', 'reports-changed'])
 const router = useRouter()
 const { user, signOut } = useAuth()
 const { theme, setTheme } = useTheme()
+const { fetchMyReports, unarchiveReport, deleteReportPermanently } = useReports()
 
 const modalBox = ref(null)
 useModalFocus(
@@ -63,21 +64,89 @@ const initials = computed(() => {
 })
 
 // ---------------------------------------------------------------------
-// Bin — stub, Task 6 fills this in.
+// Bin — list archived reports, recover, or permanently delete.
 // ---------------------------------------------------------------------
+const archivedReports = ref([])
 const binLoading = ref(false)
-function loadBin() {
-  // no-op for now
-  return
+const binError = ref('')
+const recoverBusy = ref({}) // keyed by report id
+const deleteBusy = ref({}) // keyed by report id
+const pendingHardDelete = ref(null) // { id, title } | null
+const binViewStep = ref('list') // 'list' | 'confirm-delete'
+
+// The confirm-delete step unmounts the bin list (v-if="binViewStep ===
+// 'list'"), same reasoning as ManageAccessModal.vue's transfer-confirm
+// step (L227-236): a second, independent useModalFocus watch keeps focus
+// inside modalBox — and ESC working — while this sub-state is active.
+useModalFocus(
+  () => binViewStep.value === 'confirm-delete',
+  modalBox,
+)
+
+async function loadBin() {
+  binLoading.value = true
+  const { data, error } = await fetchMyReports()
+  binLoading.value = false
+  if (error) {
+    binError.value = error.message || 'Could not load the bin.'
+    return
+  }
+  archivedReports.value = data.filter((r) => r.archived_at)
 }
 
-const anyBusy = computed(() => profileLoading.value || binLoading.value)
+async function onRecover(report) {
+  recoverBusy.value = { ...recoverBusy.value, [report.id]: true }
+  const { error } = await unarchiveReport(report.id)
+  recoverBusy.value = { ...recoverBusy.value, [report.id]: false }
+  if (error) {
+    binError.value = error.message || 'Could not restore report.'
+    return
+  }
+  await loadBin()
+  emit('reports-changed')
+}
+
+function requestHardDelete(report) {
+  pendingHardDelete.value = { id: report.id, title: report.title }
+  binViewStep.value = 'confirm-delete'
+}
+
+function cancelHardDelete() {
+  pendingHardDelete.value = null
+  binViewStep.value = 'list'
+}
+
+async function confirmHardDelete() {
+  const { id } = pendingHardDelete.value
+  deleteBusy.value = { ...deleteBusy.value, [id]: true }
+  const { error } = await deleteReportPermanently(id)
+  deleteBusy.value = { ...deleteBusy.value, [id]: false }
+  binViewStep.value = 'list'
+  pendingHardDelete.value = null
+  if (error) {
+    binError.value = error.message || 'Could not permanently delete report.'
+    return
+  }
+  await loadBin()
+  emit('reports-changed')
+}
+
+const anyBusy = computed(
+  () =>
+    profileLoading.value ||
+    binLoading.value ||
+    Object.values(recoverBusy.value).some(Boolean) ||
+    Object.values(deleteBusy.value).some(Boolean),
+)
 
 watch(
   () => props.open,
   (isOpen) => {
     if (!isOpen) return
     activeSection.value = 'profile'
+    binViewStep.value = 'list'
+    pendingHardDelete.value = null
+    binError.value = ''
     loadProfile()
     loadBin()
   },
@@ -158,7 +227,51 @@ async function handleLogout() {
           </template>
 
           <template v-else-if="activeSection === 'bin'">
-            <p>Loading…</p>
+            <template v-if="binViewStep === 'list'">
+              <p v-if="binError" class="auth-error">{{ binError }}</p>
+              <p v-if="!archivedReports.length" class="settings-profile-email">Nothing in the bin.</p>
+              <div v-else class="bin-list">
+                <div v-for="report in archivedReports" :key="report.id" class="bin-item">
+                  <div>
+                    <div class="settings-profile-name">{{ report.title }}</div>
+                    <div class="settings-profile-email">
+                      Deleted {{ new Date(report.archived_at).toLocaleDateString() }}
+                    </div>
+                  </div>
+                  <div class="bin-item-actions">
+                    <button
+                      type="button"
+                      class="btn"
+                      :disabled="!!recoverBusy[report.id] || !!deleteBusy[report.id]"
+                      @click="onRecover(report)"
+                    >
+                      <Icon name="rotateCcw" cls="icon-sm" />
+                      <span>Recover</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn danger"
+                      :disabled="!!recoverBusy[report.id] || !!deleteBusy[report.id]"
+                      @click="requestHardDelete(report)"
+                    >
+                      <Icon name="trash2" cls="icon-sm" />
+                      <span>Delete permanently</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <h2>Permanently delete this report?</h2>
+              <p>
+                "{{ pendingHardDelete?.title }}" will be deleted permanently. This can't be undone.
+              </p>
+              <div class="modal-actions">
+                <button type="button" class="btn" @click="cancelHardDelete">Cancel</button>
+                <button type="button" class="btn danger" @click="confirmHardDelete">Delete permanently</button>
+              </div>
+            </template>
           </template>
 
           <template v-else-if="activeSection === 'theme'">
