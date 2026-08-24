@@ -24,19 +24,12 @@ import Icon from '../components/icons/Icon.vue'
 import ModuleCard from '../components/ModuleCard.vue'
 import StatTiles from '../components/StatTiles.vue'
 import ProgressBar from '../components/ProgressBar.vue'
+import ManageAccessModal from '../components/ManageAccessModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { user } = useAuth()
-const {
-  getMyRole,
-  archiveReport,
-  inviteMember,
-  updateMemberRole,
-  removeMember,
-  updateTestStatus,
-  updateTestNote,
-} = useReports()
+const { getMyRole, archiveReport, updateTestStatus, updateTestNote } = useReports()
 
 const reportId = route.params.id
 
@@ -340,71 +333,19 @@ async function handleDeleteReport() {
 }
 
 // ---------------------------------------------------------------------
-// Manage Access panel (owner-only) — unchanged from Phase 4.
+// Manage Access panel (owner-only). Its own internal state (member list,
+// invite form, role changes, removal) now lives inside
+// ManageAccessModal.vue/useReportMembers.js (Task 8/6) — this file only
+// keeps the open/close flag, since the trigger button and the PDF-capture
+// snapshot logic in handleDownloadPdf both need it.
 // ---------------------------------------------------------------------
 const manageOpen = ref(false)
-const manageModalBox = ref(null)
-useModalFocus(manageOpen, manageModalBox)
-const inviteValue = ref('')
-const inviteRole = ref('viewer')
-const inviteBusy = ref(false)
-const inviteError = ref('')
-const inviteSuccess = ref('')
 
-async function submitInvite() {
-  inviteError.value = ''
-  inviteSuccess.value = ''
-  if (!inviteValue.value.trim()) {
-    inviteError.value = 'Enter an email address.'
-    return
-  }
-  inviteBusy.value = true
-  const { data, error } = await inviteMember(reportId, inviteValue.value, inviteRole.value)
-  inviteBusy.value = false
-  if (error) {
-    inviteError.value = error
-    return
-  }
-  if (data?.status === 'added') {
-    await load()
-  }
-  inviteSuccess.value = data?.message || 'Invite sent.'
-  inviteValue.value = ''
-}
-
-const roleChangeBusy = reactive({})
-async function handleRoleChange(member, newRole) {
-  const prev = member.role
-  member.role = newRole
-  const ownerCount = members.value.filter((m) => m.role === 'owner').length
-  if (prev === 'owner' && newRole !== 'owner' && ownerCount <= 1) {
-    member.role = prev
-    showToast("Can't demote the only owner — promote someone else first.")
-    return
-  }
-
-  roleChangeBusy[member.id] = true
-  const { error } = await updateMemberRole(member.id, newRole)
-  roleChangeBusy[member.id] = false
-  if (error) {
-    member.role = prev
-    showToast(error.message || 'Could not update role.')
-  }
-}
-
-async function handleRemoveMember(member) {
-  const ownerCount = members.value.filter((m) => m.role === 'owner').length
-  if (member.role === 'owner' && ownerCount <= 1) {
-    showToast("Can't remove the only owner — promote someone else first.")
-    return
-  }
-
-  const { error } = await removeMember(member.id)
-  if (error) {
-    showToast(error.message || 'Could not remove member.')
-    return
-  }
-  members.value = members.value.filter((m) => m.id !== member.id)
+// After a successful ownership transfer inside ManageAccessModal, the
+// current user's own role may have changed — re-load so isOwner/myRole
+// (both derived from `members`) reflect it.
+async function onMembershipChanged() {
+  await load()
 }
 
 // ---------------------------------------------------------------------
@@ -533,11 +474,6 @@ function onDocumentKeydown(e) {
   }
   if (reportModalOpen.value) {
     closeReportModal()
-    return
-  }
-  // AA audit: Manage Access previously had no ESC route out at all.
-  if (manageOpen.value) {
-    manageOpen.value = false
     return
   }
   closeAllMenus()
@@ -765,80 +701,13 @@ onUnmounted(() => {
   </main>
 
   <!-- Manage Access modal (owner-only) -->
-  <div
-    class="modal-overlay"
-    :class="{ open: manageOpen }"
-    :inert="!manageOpen"
-    @click.self="manageOpen = false"
-  >
-    <div ref="manageModalBox" class="modal-box modal-box--form" role="dialog" aria-modal="true">
-      <h2>Manage access</h2>
-
-      <div>
-        <div v-for="member in members" :key="member.id" class="member-row">
-          <div class="member-row-id">
-            <span class="mono-id" :title="member.user_id">
-              {{ member.user_id }}{{ member.user_id === user?.id ? ' (you)' : '' }}
-            </span>
-          </div>
-          <div class="member-row-actions">
-            <select
-              class="role-select"
-              :value="member.role"
-              :disabled="roleChangeBusy[member.id]"
-              @change="handleRoleChange(member, $event.target.value)"
-            >
-              <option value="owner">Owner</option>
-              <option value="editor">Editor</option>
-              <option value="viewer">Viewer</option>
-            </select>
-            <button
-              class="icon-btn"
-              type="button"
-              aria-label="Remove member"
-              @click="handleRemoveMember(member)"
-            >
-              <Icon name="trash2" cls="icon-sm" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="auth-field" style="margin-top: 16px">
-        <label class="auth-label" for="report-invite-id">Invite by email</label>
-        <input
-          id="report-invite-id"
-          v-model="inviteValue"
-          type="email"
-          class="auth-input"
-          :disabled="inviteBusy"
-          placeholder="teammate@example.com"
-        />
-        <p class="field-hint">
-          If they already have an account they're added immediately; otherwise we send them an
-          invite email to create one.
-        </p>
-      </div>
-      <div class="auth-field">
-        <label class="auth-label" for="report-invite-role">Role</label>
-        <select id="report-invite-role" v-model="inviteRole" class="auth-input" :disabled="inviteBusy">
-          <option value="viewer">Viewer</option>
-          <option value="editor">Editor</option>
-          <option value="owner">Owner</option>
-        </select>
-      </div>
-
-      <p v-if="inviteError" class="auth-error">{{ inviteError }}</p>
-      <p v-if="inviteSuccess" class="auth-success">{{ inviteSuccess }}</p>
-
-      <div class="modal-actions">
-        <button class="btn" type="button" @click="manageOpen = false">Close</button>
-        <button class="btn primary" type="button" :disabled="inviteBusy" @click="submitInvite">
-          {{ inviteBusy ? 'Adding…' : 'Add member' }}
-        </button>
-      </div>
-    </div>
-  </div>
+  <ManageAccessModal
+    :open="manageOpen"
+    :report-id="reportId"
+    :current-user-id="user?.id"
+    @close="manageOpen = false"
+    @membership-changed="onMembershipChanged"
+  />
 
   <!-- Bulk-mark confirm modal -->
   <div
