@@ -1691,6 +1691,12 @@
     gap:8px;
     flex-shrink:0;
   }
+  /* List view (Task 11) — denser row: smaller avatar, no email/invite-meta
+     line. Toggled via .manage-access-toolbar's card/list icon-button. */
+  .member-card--compact{ padding:6px 10px; }
+  .member-card--compact .member-avatar{ width:24px; height:24px; font-size:10px; }
+  .member-card--compact .member-card-email{ display:none; }
+  .member-card--compact .member-invite-meta{ display:none; }
   /* Gap above Close — list and action row were touching. */
   .modal-box--members .modal-actions{
     margin-top:14px;

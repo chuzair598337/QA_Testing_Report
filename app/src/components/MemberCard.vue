@@ -13,6 +13,9 @@ const props = defineProps({
   // canManage only gates the select/trash/resend/revoke for OTHER rows.
   canManage: { type: Boolean, default: false },
   roleChangeBusy: { type: Boolean, default: false },
+  // List-view mode (Task 11) — renders a denser row: smaller avatar, no
+  // email/invite-meta line.
+  compact: { type: Boolean, default: false },
 })
 const emit = defineEmits(['role-change', 'remove', 'resend', 'revoke'])
 
@@ -45,7 +48,7 @@ function relativeInviteAge(iso) {
 </script>
 
 <template>
-  <div class="member-card" :class="{ pending: row.status === 'pending' }">
+  <div class="member-card" :class="{ pending: row.status === 'pending', 'member-card--compact': compact }">
     <div class="member-card-identity">
       <div class="member-avatar" aria-hidden="true">{{ initials }}</div>
       <div class="member-card-text">

@@ -145,6 +145,16 @@ function clearFilters() {
   filter.value = 'all'
 }
 
+// Card/list view toggle (Task 11) — persisted the same way as Dashboard's
+// view-mode toggle, but under its own localStorage key since this is a
+// different list.
+const MEMBER_VIEW_MODE_KEY = 'qa-report:manage-access-view-mode'
+const memberViewMode = ref(localStorage.getItem(MEMBER_VIEW_MODE_KEY) === 'list' ? 'list' : 'card')
+function setMemberViewMode(mode) {
+  memberViewMode.value = mode
+  localStorage.setItem(MEMBER_VIEW_MODE_KEY, mode)
+}
+
 const visibleRows = computed(() => {
   let list = rows.value
 
@@ -443,6 +453,18 @@ async function onRevoke(inviteId) {
               </button>
             </div>
           </div>
+          <div class="menu-wrap">
+            <button
+              type="button"
+              class="icon-btn"
+              :class="{ 'active-state': memberViewMode === 'list' }"
+              :aria-pressed="memberViewMode === 'list'"
+              title="Toggle list view"
+              @click.stop="setMemberViewMode(memberViewMode === 'card' ? 'list' : 'card')"
+            >
+              <Icon :name="memberViewMode === 'list' ? 'grid' : 'list'" cls="icon-sm" />
+            </button>
+          </div>
           <button v-if="hasActiveFilters" type="button" class="btn manage-access-clear" @click="clearFilters">
             Clear
           </button>
@@ -478,6 +500,7 @@ async function onRevoke(inviteId) {
               :is-self="row.user_id === currentUserId"
               :can-manage="isOwnerViewer"
               :role-change-busy="!!roleChangeBusy[row.id]"
+              :compact="memberViewMode === 'list'"
               @role-change="onRoleChange"
               @remove="onRemove"
               @resend="onResend"
