@@ -440,6 +440,7 @@
     max-width:1040px;
     margin:0 auto;
     padding:28px 24px 80px;
+    position:relative;
   }
 
   .module{
@@ -973,6 +974,66 @@
   .empty-actions .btn{ margin:0; }
   #filter-empty[hidden]{ display:none !important; }
 
+  /* ---------- Busy overlay (generic, app-wide) ---------- */
+  .loading-frame{
+    position:relative;
+    min-height:240px;
+  }
+  .busy-overlay{
+    position:absolute;
+    inset:0;
+    /* Below .head-chrome/.dropdown-menu--floating(50) and .modal-overlay(100). */
+    z-index:45;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    background:rgba(255,255,255,0.82);
+    border-radius:inherit;
+    pointer-events:none;
+  }
+  html[data-theme="dark"] .busy-overlay{
+    background:rgba(22,29,43,0.82);
+  }
+  .busy-overlay.show{
+    display:flex;
+    pointer-events:auto;
+  }
+  .busy-overlay.fixed{
+    position:fixed;
+    /* Above .dropzone-overlay(90) — PDF export is the only fixed instance,
+       and it never needs to beat .modal-overlay's 100. */
+    z-index:95;
+  }
+  .busy-spinner{
+    width:28px;
+    height:28px;
+    border:3px solid var(--border);
+    border-top-color:var(--primary);
+    border-radius:50%;
+    animation:busy-spin .7s linear infinite;
+  }
+  @keyframes busy-spin{
+    to{ transform:rotate(360deg); }
+  }
+  .busy-overlay-label{
+    margin:0;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-soft);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .busy-spinner{
+      animation:busy-pulse 1.4s ease-in-out infinite;
+      border-color:var(--primary);
+    }
+  }
+  @keyframes busy-pulse{
+    0%, 100%{ opacity:.35; }
+    50%{ opacity:1; }
+  }
+
   /* Applied while html2pdf is capturing the page */
   body.generating-pdf .head-chrome{ position:static; box-shadow:none; }
   body.generating-pdf .head-actions,
@@ -1046,6 +1107,7 @@
     max-width:360px;
     width:100%;
     padding:20px;
+    position:relative;
   }
   .modal-box--closable{ position:relative; }
   .modal-close-btn{
@@ -1551,6 +1613,7 @@
     flex-direction:column;
     gap:8px;
     padding-right:2px;
+    position:relative;
   }
   @media (max-width:480px){
     .manage-access-list{ min-height:200px; }

@@ -13,6 +13,7 @@ import { useTheme } from '../composables/useTheme'
 import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/icons/Icon.vue'
 import ManageAccessModal from '../components/ManageAccessModal.vue'
+import BusyOverlay from '../components/BusyOverlay.vue'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
@@ -282,8 +283,8 @@ async function handleUnarchive(report) {
   </div>
 
   <main>
-    <div v-if="loading" class="empty-state">
-      <p class="empty-hint">Loading your reports…</p>
+    <div v-if="loading" class="loading-frame">
+      <BusyOverlay :active="loading" label="Loading your reports…" />
     </div>
 
     <div v-else-if="loadError" class="empty-state">
@@ -422,85 +423,90 @@ async function handleUnarchive(report) {
     @keydown="onCreateModalKeydown"
   >
     <div ref="createModalBox" class="modal-box modal-box--form" role="dialog" aria-modal="true">
+      <BusyOverlay
+        :active="createBusy || inviteBusy"
+        :label="createStep === 'form' ? 'Creating report…' : 'Adding member…'"
+      />
       <template v-if="createStep === 'form'">
-        <h2>New report</h2>
-        <p v-if="createError" class="auth-error">{{ createError }}</p>
+        <div :inert="createBusy">
+          <h2>New report</h2>
+          <p v-if="createError" class="auth-error">{{ createError }}</p>
 
-        <div class="auth-field">
-          <label class="auth-label" for="new-report-title">Title</label>
-          <input
-            id="new-report-title"
-            v-model="newTitle"
-            type="text"
-            class="auth-input"
-            :disabled="createBusy"
-            placeholder="e.g. Onboarding — Q3 regression"
-          />
-        </div>
+          <div class="auth-field">
+            <label class="auth-label" for="new-report-title">Title</label>
+            <input
+              id="new-report-title"
+              v-model="newTitle"
+              type="text"
+              class="auth-input"
+              placeholder="e.g. Onboarding — Q3 regression"
+            />
+          </div>
 
-        <div class="auth-field">
-          <label class="auth-label" for="new-report-file">Test-suite JSON file</label>
-          <input
-            id="new-report-file"
-            type="file"
-            accept=".json,application/json"
-            class="auth-input"
-            :disabled="createBusy"
-            @change="handleFileChange"
-          />
-          <p class="field-hint">
-            Must match the legacy export shape — see <code>sample.json</code> in the repo root.
-          </p>
-        </div>
+          <div class="auth-field">
+            <label class="auth-label" for="new-report-file">Test-suite JSON file</label>
+            <input
+              id="new-report-file"
+              type="file"
+              accept=".json,application/json"
+              class="auth-input"
+              @change="handleFileChange"
+            />
+            <p class="field-hint">
+              Must match the legacy export shape — see <code>sample.json</code> in the repo root.
+            </p>
+          </div>
 
-        <div class="modal-actions">
-          <button class="btn" type="button" :disabled="createBusy" @click="closeCreateModal">
-            Cancel
-          </button>
-          <button class="btn primary" type="button" :disabled="createBusy" @click="submitCreate">
-            {{ createBusy ? 'Creating…' : 'Create report' }}
-          </button>
+          <div class="modal-actions">
+            <button class="btn" type="button" @click="closeCreateModal">
+              Cancel
+            </button>
+            <button class="btn primary" type="button" @click="submitCreate">
+              {{ createBusy ? 'Creating…' : 'Create report' }}
+            </button>
+          </div>
         </div>
       </template>
 
       <template v-else>
-        <h2>{{ createdReportTitle }} created</h2>
-        <p class="empty-hint" style="margin: 0 0 14px; text-align: left">
-          Invite a teammate now, or do it later from the report's Manage Access panel.
-        </p>
-
-        <p v-if="inviteError" class="auth-error">{{ inviteError }}</p>
-        <p v-if="inviteSuccess" class="auth-success">{{ inviteSuccess }}</p>
-
-        <div class="auth-field">
-          <label class="auth-label" for="invite-id">Teammate's email</label>
-          <input
-            id="invite-id"
-            v-model="inviteValue"
-            type="email"
-            class="auth-input"
-            :disabled="inviteBusy"
-            placeholder="teammate@example.com"
-          />
-          <p class="field-hint">
-            If they already have an account they're added immediately; otherwise we send them an
-            invite email to create one.
+        <div :inert="inviteBusy">
+          <h2>{{ createdReportTitle }} created</h2>
+          <p class="empty-hint" style="margin: 0 0 14px; text-align: left">
+            Invite a teammate now, or do it later from the report's Manage Access panel.
           </p>
-        </div>
 
-        <div class="auth-field">
-          <label class="auth-label" for="invite-role">Role</label>
-          <select id="invite-role" v-model="inviteRole" class="auth-input" :disabled="inviteBusy">
-            <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
-          </select>
-        </div>
+          <p v-if="inviteError" class="auth-error">{{ inviteError }}</p>
+          <p v-if="inviteSuccess" class="auth-success">{{ inviteSuccess }}</p>
 
-        <div class="modal-actions">
-          <button class="btn" type="button" @click="finishCreate">Done</button>
-          <button class="btn primary" type="button" :disabled="inviteBusy" @click="submitInvite">
-            {{ inviteBusy ? 'Adding…' : 'Add member' }}
-          </button>
+          <div class="auth-field">
+            <label class="auth-label" for="invite-id">Teammate's email</label>
+            <input
+              id="invite-id"
+              v-model="inviteValue"
+              type="email"
+              class="auth-input"
+              placeholder="teammate@example.com"
+            />
+            <p class="field-hint">
+              If they already have an account they're added immediately; otherwise we send them an
+              invite email to create one.
+            </p>
+          </div>
+
+          <div class="auth-field">
+            <label class="auth-label" for="invite-role">Role</label>
+            <select id="invite-role" v-model="inviteRole" class="auth-input">
+              <option value="viewer">Viewer</option>
+              <option value="editor">Editor</option>
+            </select>
+          </div>
+
+          <div class="modal-actions">
+            <button class="btn" type="button" @click="finishCreate">Done</button>
+            <button class="btn primary" type="button" @click="submitInvite">
+              {{ inviteBusy ? 'Adding…' : 'Add member' }}
+            </button>
+          </div>
         </div>
       </template>
     </div>

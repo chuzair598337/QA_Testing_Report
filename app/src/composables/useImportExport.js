@@ -268,7 +268,10 @@ export function useImportExport() {
       margin: [10, 10, 12, 10],
       filename: `qa-test-report-${new Date().toISOString().slice(0, 10)}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      // busy-overlay is position:fixed and full-viewport while pdfBusy is
+      // true, which is exactly the moment this capture runs — exclude it
+      // so it never gets baked into the exported PDF image.
+      html2canvas: { scale: 2, useCORS: true, ignoreElements: (el) => el.classList.contains('busy-overlay') },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       pagebreak: { mode: ['css', 'legacy'] },
     }

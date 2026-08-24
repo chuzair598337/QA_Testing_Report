@@ -10,6 +10,7 @@ import { useReportMembers } from '../composables/useReportMembers'
 import { useModalFocus } from '../composables/useModalFocus'
 import Icon from './icons/Icon.vue'
 import MemberCard from './MemberCard.vue'
+import BusyOverlay from './BusyOverlay.vue'
 
 const props = defineProps({
   open: { type: Boolean, required: true },
@@ -180,6 +181,18 @@ const newEmail = ref('')
 const newRole = ref('viewer')
 const addBusy = ref(false)
 const addError = ref('')
+// Remove/resend/revoke/transfer previously had zero busy-state protection
+// at all — fully clickable mid-request. One combined overlay covers the
+// whole modal for all five actions (deliberately excludes roleChangeBusy,
+// which stays the lightweight per-row disable it's always been — a role
+// change isn't a modal-submit-shaped action).
+const removeBusy = ref(false)
+const resendBusy = ref(false)
+const revokeBusy = ref(false)
+const transferBusy = ref(false)
+const actionBusy = computed(
+  () => addBusy.value || removeBusy.value || resendBusy.value || revokeBusy.value || transferBusy.value,
+)
 
 function toggleAdd() {
   addOpen.value = !addOpen.value
@@ -189,15 +202,18 @@ function toggleAdd() {
 async function submitAdd() {
   addError.value = ''
   addBusy.value = true
-  const { error } = await inviteMember(props.reportId, newEmail.value, newRole.value)
-  addBusy.value = false
-  if (error) {
-    addError.value = error
-    return
+  try {
+    const { error } = await inviteMember(props.reportId, newEmail.value, newRole.value)
+    if (error) {
+      addError.value = error
+      return
+    }
+    newEmail.value = ''
+    addOpen.value = false
+    await load()
+  } finally {
+    addBusy.value = false
   }
-  newEmail.value = ''
-  addOpen.value = false
-  await load()
 }
 
 // ---------------------------------------------------------------------
@@ -247,15 +263,20 @@ async function applyRoleChange(memberId, newRoleValue) {
 async function confirmTransfer() {
   if (!pendingTransfer.value) return
   const { memberId } = pendingTransfer.value
-  const { error } = await transferOwnership(props.reportId, memberId)
-  viewStep.value = 'list'
-  pendingTransfer.value = null
-  if (error) {
-    loadError.value = error
-    return
+  transferBusy.value = true
+  try {
+    const { error } = await transferOwnership(props.reportId, memberId)
+    viewStep.value = 'list'
+    pendingTransfer.value = null
+    if (error) {
+      loadError.value = error
+      return
+    }
+    await load()
+    emit('membership-changed')
+  } finally {
+    transferBusy.value = false
   }
-  await load()
-  emit('membership-changed')
 }
 
 function cancelTransfer() {
@@ -264,46 +285,66 @@ function cancelTransfer() {
 }
 
 async function onRemove(memberId) {
-  const { error } = await removeMember(memberId)
-  if (error) {
-    setActionMessage(error, 'error')
-    return
+  removeBusy.value = true
+  try {
+    const { error } = await removeMember(memberId)
+    if (error) {
+      setActionMessage(error, 'error')
+      return
+    }
+    // removeMember() only returns { data: true } on success — no message
+    // from the server to surface, so use a fixed confirmation line.
+    setActionMessage('Member removed.', 'success')
+    await load()
+  } finally {
+    removeBusy.value = false
   }
-  // removeMember() only returns { data: true } on success — no message
-  // from the server to surface, so use a fixed confirmation line.
-  setActionMessage('Member removed.', 'success')
-  await load()
 }
 
 async function onResend(inviteId) {
-  const { data, error } = await resendInvite(props.reportId, inviteId)
-  if (error) {
-    setActionMessage(error, 'error')
-    return
+  resendBusy.value = true
+  try {
+    const { data, error } = await resendInvite(props.reportId, inviteId)
+    if (error) {
+      setActionMessage(error, 'error')
+      return
+    }
+    // Covers the 'resent' case and the 'noop' case (spec: "Already up to
+    // date") the same way — both carry a human-readable data.message and
+    // neither is a failure, so both use the success styling.
+    setActionMessage(data?.message || 'Invite resent.', 'success')
+    await load()
+  } finally {
+    resendBusy.value = false
   }
-  // Covers the 'resent' case and the 'noop' case (spec: "Already up to
-  // date") the same way — both carry a human-readable data.message and
-  // neither is a failure, so both use the success styling.
-  setActionMessage(data?.message || 'Invite resent.', 'success')
-  await load()
 }
 
 async function onRevoke(inviteId) {
-  const { data, error } = await revokeInvite(props.reportId, inviteId)
-  if (error) {
-    setActionMessage(error, 'error')
-    return
+  revokeBusy.value = true
+  try {
+    const { data, error } = await revokeInvite(props.reportId, inviteId)
+    if (error) {
+      setActionMessage(error, 'error')
+      return
+    }
+    setActionMessage(data?.message || 'Invite revoked.', 'success')
+    await load()
+  } finally {
+    revokeBusy.value = false
   }
-  setActionMessage(data?.message || 'Invite revoked.', 'success')
-  await load()
 }
 </script>
 
 <template>
   <div class="modal-overlay" :class="{ open }" :inert="!open" @click.self="close" @keydown="onModalKeydown">
     <div ref="modalBox" class="modal-box modal-box--members" role="dialog" aria-modal="true">
+      <!-- Sibling of both viewStep templates below, never a descendant of
+           an :inert element — see the inert/BusyOverlay note near <main>
+           in ReportView.vue for why that ordering matters for the
+           role="status" label to actually get announced. -->
+      <BusyOverlay :active="actionBusy" label="Working…" />
       <template v-if="viewStep === 'list'">
-        <div class="manage-access-header">
+        <div class="manage-access-header" :inert="actionBusy">
           <h2>Manage access</h2>
           <button type="button" class="btn primary" @click="toggleAdd">
             <Icon name="plus" cls="icon-sm" />
@@ -311,7 +352,7 @@ async function onRevoke(inviteId) {
           </button>
         </div>
 
-        <div v-if="addOpen" class="manage-access-add-panel">
+        <div v-if="addOpen" class="manage-access-add-panel" :inert="actionBusy">
           <div class="auth-field">
             <label class="auth-label" for="manage-access-email">Invite by email</label>
             <input
@@ -339,7 +380,7 @@ async function onRevoke(inviteId) {
           </div>
         </div>
 
-        <div class="manage-access-toolbar">
+        <div class="manage-access-toolbar" :inert="actionBusy">
           <div class="search-wrap">
             <Icon name="search" cls="icon search-icon" />
             <input
@@ -419,44 +460,48 @@ async function onRevoke(inviteId) {
           </button>
         </div>
 
-        <div class="manage-access-list">
-          <p v-if="loading" class="empty-hint">Loading members…</p>
-          <div v-else-if="visibleRows.length === 0" class="empty-state empty-state--filter">
-            <div class="empty-icon" aria-hidden="true"><Icon name="users" cls="icon-lg" /></div>
-            <h2 class="empty-title">No members match</h2>
-            <p class="empty-hint">Try a different search or filter.</p>
-            <div v-if="hasActiveFilters" class="empty-actions">
-              <button class="btn primary" type="button" @click="clearFilters">Clear search &amp; filter</button>
+        <div class="manage-access-list" :inert="actionBusy">
+          <BusyOverlay :active="loading" label="Loading members…" />
+          <template v-if="!loading">
+            <div v-if="visibleRows.length === 0" class="empty-state empty-state--filter">
+              <div class="empty-icon" aria-hidden="true"><Icon name="users" cls="icon-lg" /></div>
+              <h2 class="empty-title">No members match</h2>
+              <p class="empty-hint">Try a different search or filter.</p>
+              <div v-if="hasActiveFilters" class="empty-actions">
+                <button class="btn primary" type="button" @click="clearFilters">Clear search &amp; filter</button>
+              </div>
             </div>
-          </div>
-          <MemberCard
-            v-for="row in visibleRows"
-            :key="`${row.kind}-${row.id}`"
-            :row="row"
-            :is-self="row.user_id === currentUserId"
-            :can-manage="isOwnerViewer"
-            :role-change-busy="!!roleChangeBusy[row.id]"
-            @role-change="onRoleChange"
-            @remove="onRemove"
-            @resend="onResend"
-            @revoke="onRevoke"
-          />
+            <MemberCard
+              v-for="row in visibleRows"
+              :key="`${row.kind}-${row.id}`"
+              :row="row"
+              :is-self="row.user_id === currentUserId"
+              :can-manage="isOwnerViewer"
+              :role-change-busy="!!roleChangeBusy[row.id]"
+              @role-change="onRoleChange"
+              @remove="onRemove"
+              @resend="onResend"
+              @revoke="onRevoke"
+            />
+          </template>
         </div>
 
-        <div class="modal-actions">
+        <div class="modal-actions" :inert="actionBusy">
           <button type="button" class="btn" @click="close">Close</button>
         </div>
       </template>
 
       <template v-else>
-        <h2>Transfer ownership?</h2>
-        <p>
-          {{ pendingTransfer?.name }} becomes the owner. You'll be moved to Editor. This can't be undone from
-          here — the new owner would need to transfer it back.
-        </p>
-        <div class="modal-actions">
-          <button type="button" class="btn" @click="cancelTransfer">Cancel</button>
-          <button type="button" class="btn danger" @click="confirmTransfer">Transfer ownership</button>
+        <div :inert="transferBusy">
+          <h2>Transfer ownership?</h2>
+          <p>
+            {{ pendingTransfer?.name }} becomes the owner. You'll be moved to Editor. This can't be undone from
+            here — the new owner would need to transfer it back.
+          </p>
+          <div class="modal-actions">
+            <button type="button" class="btn" @click="cancelTransfer">Cancel</button>
+            <button type="button" class="btn danger" @click="confirmTransfer">Transfer ownership</button>
+          </div>
         </div>
       </template>
     </div>

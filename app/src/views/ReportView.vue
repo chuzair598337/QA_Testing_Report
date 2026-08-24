@@ -28,6 +28,7 @@ import ModuleCard from '../components/ModuleCard.vue'
 import StatTiles from '../components/StatTiles.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import ManageAccessModal from '../components/ManageAccessModal.vue'
+import BusyOverlay from '../components/BusyOverlay.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -280,20 +281,27 @@ useModalFocus(
   confirmModalBox,
 )
 
+const bulkMarkBusy = ref(false)
+
 function handleBulkMark(testVms, targetStatus, scopeLabel) {
   const realTests = testVms.map((tv) => findTest(tv.id)).filter(Boolean)
   const overwriteCount = realTests.filter((t) => t.status !== 'pending' && t.status !== targetStatus).length
 
   const apply = async () => {
-    for (const t of realTests) {
-      if (t.status === targetStatus) continue
-      const prev = t.status
-      t.status = targetStatus
-      const { error } = await updateTestStatus(t.id, targetStatus)
-      if (error) {
-        t.status = prev
-        showToast(error.message || 'Could not update one or more tests.')
+    bulkMarkBusy.value = true
+    try {
+      for (const t of realTests) {
+        if (t.status === targetStatus) continue
+        const prev = t.status
+        t.status = targetStatus
+        const { error } = await updateTestStatus(t.id, targetStatus)
+        if (error) {
+          t.status = prev
+          showToast(error.message || 'Could not update one or more tests.')
+        }
       }
+    } finally {
+      bulkMarkBusy.value = false
     }
   }
 
@@ -665,44 +673,50 @@ onUnmounted(() => {
   </div>
 
   <main>
-    <div v-if="loading" class="empty-state">
-      <p class="empty-hint">Loading report…</p>
-    </div>
-
-    <div v-else-if="loadError" class="empty-state">
-      <p class="auth-error">{{ loadError }}</p>
-      <div class="empty-actions">
-        <button class="btn" type="button" @click="load">Try again</button>
-        <RouterLink class="btn" to="/dashboard">Back to dashboard</RouterLink>
+    <!-- Sibling of the :inert wrapper below, not a descendant — an inert
+         ancestor would remove this overlay's role="status" label from the
+         accessibility tree too, silencing the announcement it exists to make. -->
+    <BusyOverlay :active="bulkMarkBusy" label="Updating tests…" />
+    <div :inert="bulkMarkBusy">
+      <div v-if="loading" class="loading-frame">
+        <BusyOverlay :active="loading" label="Loading report…" />
       </div>
-    </div>
 
-    <div v-else-if="tree.length === 0" class="empty-state">
-      <h2 class="empty-title">No modules in this report</h2>
-      <p class="empty-hint">This report's imported JSON had no modules.</p>
-    </div>
-
-    <template v-else>
-      <ModuleCard
-        v-for="mod in viewTree"
-        v-show="!mod.hidden"
-        :key="mod.id"
-        :mod="mod"
-        :status-busy="statusBusy"
-        :on-status-change="handleStatusChange"
-        :on-note-input="handleNoteInput"
-        :on-bulk-mark="handleBulkMark"
-      />
-
-      <div v-if="showFilterEmpty" id="filter-empty" class="empty-state empty-state--filter">
-        <div class="empty-icon" aria-hidden="true"><Icon name="search" cls="icon-lg" /></div>
-        <h2 class="empty-title">{{ filterEmptyMessage.title }}</h2>
-        <p class="empty-hint">{{ filterEmptyMessage.hint }}</p>
+      <div v-else-if="loadError" class="empty-state">
+        <p class="auth-error">{{ loadError }}</p>
         <div class="empty-actions">
-          <button class="btn primary" type="button" @click="clearFilterAndSearch">Show all cases</button>
+          <button class="btn" type="button" @click="load">Try again</button>
+          <RouterLink class="btn" to="/dashboard">Back to dashboard</RouterLink>
         </div>
       </div>
-    </template>
+
+      <div v-else-if="tree.length === 0" class="empty-state">
+        <h2 class="empty-title">No modules in this report</h2>
+        <p class="empty-hint">This report's imported JSON had no modules.</p>
+      </div>
+
+      <template v-else>
+        <ModuleCard
+          v-for="mod in viewTree"
+          v-show="!mod.hidden"
+          :key="mod.id"
+          :mod="mod"
+          :status-busy="statusBusy"
+          :on-status-change="handleStatusChange"
+          :on-note-input="handleNoteInput"
+          :on-bulk-mark="handleBulkMark"
+        />
+
+        <div v-if="showFilterEmpty" id="filter-empty" class="empty-state empty-state--filter">
+          <div class="empty-icon" aria-hidden="true"><Icon name="search" cls="icon-lg" /></div>
+          <h2 class="empty-title">{{ filterEmptyMessage.title }}</h2>
+          <p class="empty-hint">{{ filterEmptyMessage.hint }}</p>
+          <div class="empty-actions">
+            <button class="btn primary" type="button" @click="clearFilterAndSearch">Show all cases</button>
+          </div>
+        </div>
+      </template>
+    </div>
   </main>
 
   <!-- Manage Access modal (owner-only) -->
@@ -846,6 +860,8 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <BusyOverlay fixed :active="pdfBusy" label="Generating PDF…" />
 
   <div class="toast" :class="{ show: toastVisible }">
     <span class="toast-msg">{{ toastMessage }}</span>
