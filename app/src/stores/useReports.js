@@ -301,42 +301,6 @@ async function unarchiveReport(reportId) {
 // Postgres trigger reads to auto-attach report_members the moment that
 // invite is accepted and the account is created).
 // ---------------------------------------------------------------------
-async function inviteMember(reportId, email, role) {
-  const value = (email || '').trim()
-
-  if (!value) {
-    return { data: null, error: 'Enter an email address.' }
-  }
-  if (!['editor', 'viewer'].includes(role)) {
-    return { data: null, error: 'Role must be editor or viewer.' }
-  }
-
-  const { data, error } = await supabase.functions.invoke('invite-member', {
-    body: { report_id: reportId, email: value, role },
-  })
-
-  if (error) {
-    // supabase-js surfaces non-2xx Edge Function responses as a generic
-    // FunctionsHttpError — the function's own { error } body carries the
-    // real message, so pull it out for a useful inline message.
-    const detail = await error.context?.json?.().catch(() => null)
-    return { data: null, error: detail?.error || error.message }
-  }
-
-  if (data?.error) {
-    return { data: null, error: data.error }
-  }
-
-  return { data, error: null }
-}
-
-async function updateMemberRole(memberId, role) {
-  return supabase.from('report_members').update({ role }).eq('id', memberId).select().single()
-}
-
-async function removeMember(memberId) {
-  return supabase.from('report_members').delete().eq('id', memberId)
-}
 
 // ---------------------------------------------------------------------
 // Test actions (status/note edits — the only columns editors may touch;
@@ -359,9 +323,6 @@ export function useReports() {
     createReport,
     archiveReport,
     unarchiveReport,
-    inviteMember,
-    updateMemberRole,
-    removeMember,
     updateTestStatus,
     updateTestNote,
   }
