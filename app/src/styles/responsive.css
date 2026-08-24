@@ -318,4 +318,19 @@
   .toast.show {
     transform: translateY(0);
   }
+
+  /* Settings modal: stack nav above content instead of side-by-side, and
+     lay the nav out as a row of tabs — same compact-modal precedent as
+     .manage-access-list's tighter min-height above. */
+  .settings-layout {
+    flex-direction: column;
+  }
+  .settings-nav {
+    flex-direction: row;
+    flex: 0 0 auto;
+  }
+  .settings-nav-item {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
 }

@@ -1697,6 +1697,21 @@
     margin:0;
   }
 
+  /* Settings modal (2026-08-24 design spec, Task 5) */
+  .modal-box--settings{ max-width:520px; width:100%; max-height:min(86vh,640px); display:flex; flex-direction:column; overflow:hidden; text-align:left; }
+  .settings-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .settings-layout{ display:flex; gap:16px; flex:1 1 auto; min-height:0; }
+  .settings-nav{ display:flex; flex-direction:column; gap:2px; flex:0 0 140px; }
+  .settings-nav-item{ display:flex; align-items:center; gap:8px; width:100%; padding:9px 10px; border:none; border-radius:6px; background:none; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink-soft); cursor:pointer; text-align:left; }
+  .settings-nav-item:hover{ background:var(--hover-bg); }
+  .settings-nav-item.active{ background:var(--primary-soft); color:var(--primary); }
+  .settings-panel{ flex:1 1 auto; min-width:0; overflow-y:auto; }
+  .settings-footer{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; }
+  .settings-profile{ display:flex; align-items:center; gap:14px; padding:8px 0; }
+  .settings-profile-avatar{ width:56px; height:56px; border-radius:50%; background:var(--primary-soft); color:var(--primary); font-family:var(--mono); font-size:18px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .settings-profile-name{ font-size:15px; font-weight:700; color:var(--ink); }
+  .settings-profile-email{ font-family:var(--mono); font-size:12.5px; color:var(--ink-soft); }
+
   .report-detail-head{
     display:flex;
     align-items:flex-start;
