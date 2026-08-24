@@ -191,6 +191,22 @@
   .stat-grid {
     gap: 6px;
   }
+  /* Dashboard list view (Task 10): the fixed-width head + inline stats +
+     progress bar row from the desktop layout doesn't fit a phone-width
+     card without overflowing — let it wrap onto its own rows instead. */
+  .report-grid--list .report-card {
+    flex-wrap: wrap;
+  }
+  .report-grid--list .report-card-head {
+    flex: 1 1 100%;
+  }
+  .report-grid--list .report-card-stats {
+    flex: 1 1 auto;
+  }
+  .report-grid--list .progress-track.mini {
+    flex: 1 1 100%;
+    max-width: none;
+  }
   .stat-tile {
     padding: 7px 8px;
   }

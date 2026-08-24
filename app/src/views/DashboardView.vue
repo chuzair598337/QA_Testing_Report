@@ -78,6 +78,26 @@ const reports = ref([])
 
 const activeReports = computed(() => reports.value.filter((r) => !r.archived_at))
 
+// ---------------------------------------------------------------------
+// Card/list view toggle for the active-reports grid — persisted the same
+// way useTheme.js persists the theme choice (defensive localStorage guard,
+// same key-prefix convention).
+// ---------------------------------------------------------------------
+const VIEW_MODE_KEY = 'qa-report:dashboard-view-mode'
+function getInitialViewMode() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'card'
+  }
+  return 'card'
+}
+const viewMode = ref(getInitialViewMode())
+function setViewMode(mode) {
+  viewMode.value = mode
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.setItem(VIEW_MODE_KEY, mode)
+  }
+}
+
 async function loadReports() {
   loading.value = true
   loadError.value = ''
@@ -323,95 +343,118 @@ async function handleArchive(report) {
       </div>
     </div>
 
-    <div v-else class="report-grid">
-      <div v-for="report in activeReports" :key="report.id" class="report-card" @click="openReport(report.id)">
-        <div class="report-card-head">
-          <div>
-            <h2 class="report-card-title">{{ report.title }}</h2>
-            <p class="report-card-meta">{{ new Date(report.created_at).toLocaleDateString() }}</p>
-          </div>
-          <div class="report-card-head-right">
-            <span class="role-badge" :class="myRole(report)">{{ myRole(report) }}</span>
-            <div v-if="myRole(report) === 'owner'" class="menu-wrap">
-              <button
-                type="button"
-                class="icon-btn"
-                :ref="(el) => (menuTriggerRefs[report.id] = el)"
-                aria-haspopup="true"
-                :aria-expanded="openMenuReportId === report.id"
-                title="More options"
-                @click.stop="toggleCardMenu(report.id)"
-              >
-                <Icon name="ellipsisVertical" />
-              </button>
-              <Teleport to="body">
-                <div
-                  class="dropdown-menu dropdown-menu--floating"
-                  :class="{ open: openMenuReportId === report.id }"
-                  :style="menuStyle"
-                  :inert="openMenuReportId !== report.id"
-                >
-                  <button
-                    type="button"
-                    class="dropdown-item"
-                    @click.stop="openManageAccess(report.id); closeCardMenu()"
-                  >
-                    <Icon name="users" cls="icon-sm" /><span>Manage access</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="dropdown-item"
-                    @click.stop="handleArchive(report); closeCardMenu()"
-                  >
-                    <Icon name="trash2" cls="icon-sm" /><span>Delete</span>
-                  </button>
-                </div>
-              </Teleport>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="statsOf(report).total_tests === 0" class="report-card-empty">
-          No tests in this report yet.
-        </div>
-        <template v-else>
-          <div class="stat-grid report-card-stats">
-            <div class="stat-tile total">
-              <div class="stat-label">Total</div>
-              <div class="stat-value">{{ statsOf(report).total_tests }}</div>
-            </div>
-            <div class="stat-tile passed">
-              <div class="stat-label">Pass</div>
-              <div class="stat-value">{{ statsOf(report).pass_count }}</div>
-            </div>
-            <div class="stat-tile failed">
-              <div class="stat-label">Fail</div>
-              <div class="stat-value">{{ statsOf(report).fail_count }}</div>
-            </div>
-            <div class="stat-tile percent">
-              <div class="stat-label">Pass %</div>
-              <div class="stat-value">{{ statsOf(report).pass_percent }}%</div>
-            </div>
-          </div>
-          <div
-            class="progress-track mini"
-            role="progressbar"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            :aria-valuenow="statsOf(report).pass_percent"
-            :aria-label="`${report.title} testing progress`"
-            :style="{ '--pct': statsOf(report).pass_percent + '%' }"
-          >
-            <div
-              class="progress-fill"
-              :style="{ width: statsOf(report).pass_percent + '%' }"
-            ></div>
-            <div class="progress-label progress-label--on-fill" aria-hidden="true">{{ statsOf(report).pass_percent }}% passed</div>
-            <div class="progress-label progress-label--on-track">{{ statsOf(report).pass_percent }}% passed</div>
-          </div>
-        </template>
+    <template v-else>
+      <div v-if="activeReports.length > 0" class="view-toggle" role="group" aria-label="View mode">
+        <button
+          type="button"
+          class="view-toggle-btn"
+          :class="{ active: viewMode === 'card' }"
+          :aria-pressed="viewMode === 'card'"
+          @click="setViewMode('card')"
+        >
+          <Icon name="grid" cls="icon-sm" /><span>Card</span>
+        </button>
+        <button
+          type="button"
+          class="view-toggle-btn"
+          :class="{ active: viewMode === 'list' }"
+          :aria-pressed="viewMode === 'list'"
+          @click="setViewMode('list')"
+        >
+          <Icon name="list" cls="icon-sm" /><span>List</span>
+        </button>
       </div>
-    </div>
+
+      <div class="report-grid" :class="{ 'report-grid--list': viewMode === 'list' }">
+        <div v-for="report in activeReports" :key="report.id" class="report-card" @click="openReport(report.id)">
+          <div class="report-card-head">
+            <div>
+              <h2 class="report-card-title">{{ report.title }}</h2>
+              <p class="report-card-meta">{{ new Date(report.created_at).toLocaleDateString() }}</p>
+            </div>
+            <div class="report-card-head-right">
+              <span class="role-badge" :class="myRole(report)">{{ myRole(report) }}</span>
+              <div v-if="myRole(report) === 'owner'" class="menu-wrap">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  :ref="(el) => (menuTriggerRefs[report.id] = el)"
+                  aria-haspopup="true"
+                  :aria-expanded="openMenuReportId === report.id"
+                  title="More options"
+                  @click.stop="toggleCardMenu(report.id)"
+                >
+                  <Icon name="ellipsisVertical" />
+                </button>
+                <Teleport to="body">
+                  <div
+                    class="dropdown-menu dropdown-menu--floating"
+                    :class="{ open: openMenuReportId === report.id }"
+                    :style="menuStyle"
+                    :inert="openMenuReportId !== report.id"
+                  >
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click.stop="openManageAccess(report.id); closeCardMenu()"
+                    >
+                      <Icon name="users" cls="icon-sm" /><span>Manage access</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click.stop="handleArchive(report); closeCardMenu()"
+                    >
+                      <Icon name="trash2" cls="icon-sm" /><span>Delete</span>
+                    </button>
+                  </div>
+                </Teleport>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="statsOf(report).total_tests === 0" class="report-card-empty">
+            No tests in this report yet.
+          </div>
+          <template v-else>
+            <div class="stat-grid report-card-stats">
+              <div class="stat-tile total">
+                <div class="stat-label">Total</div>
+                <div class="stat-value">{{ statsOf(report).total_tests }}</div>
+              </div>
+              <div class="stat-tile passed">
+                <div class="stat-label">Pass</div>
+                <div class="stat-value">{{ statsOf(report).pass_count }}</div>
+              </div>
+              <div class="stat-tile failed">
+                <div class="stat-label">Fail</div>
+                <div class="stat-value">{{ statsOf(report).fail_count }}</div>
+              </div>
+              <div class="stat-tile percent">
+                <div class="stat-label">Pass %</div>
+                <div class="stat-value">{{ statsOf(report).pass_percent }}%</div>
+              </div>
+            </div>
+            <div
+              class="progress-track mini"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="statsOf(report).pass_percent"
+              :aria-label="`${report.title} testing progress`"
+              :style="{ '--pct': statsOf(report).pass_percent + '%' }"
+            >
+              <div
+                class="progress-fill"
+                :style="{ width: statsOf(report).pass_percent + '%' }"
+              ></div>
+              <div class="progress-label progress-label--on-fill" aria-hidden="true">{{ statsOf(report).pass_percent }}% passed</div>
+              <div class="progress-label progress-label--on-track">{{ statsOf(report).pass_percent }}% passed</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
   </main>
 
   <!-- Create-report modal -->

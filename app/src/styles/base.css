@@ -1739,4 +1739,17 @@
     text-decoration:none;
     margin-bottom:8px;
   }
+
+  /* Dashboard card/list view toggle (Task 10) */
+  .view-toggle{ display:inline-flex; gap:2px; margin-bottom:12px; border:1px solid var(--border-strong); border-radius:8px; padding:2px; }
+  .view-toggle-btn{ display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:none; border-radius:6px; background:none; font-family:var(--sans); font-size:12.5px; font-weight:600; color:var(--ink-faint); cursor:pointer; }
+  .view-toggle-btn.active{ background:var(--primary-soft); color:var(--primary); }
+  .report-grid--list{ display:flex; flex-direction:column; gap:8px; grid-template-columns:none; }
+  .report-grid--list .report-card{ flex-direction:row; align-items:center; padding:10px 14px; gap:14px; }
+  .report-grid--list .report-card-head{ flex:0 0 240px; }
+  .report-grid--list .report-card-stats{ display:flex; gap:14px; flex:0 0 auto; }
+  .report-grid--list .report-card-stats .stat-tile{ padding:0; background:none; border:none; }
+  .report-grid--list .report-card-stats .stat-tile .stat-label{ white-space:nowrap; }
+  .report-grid--list .progress-track.mini{ flex:1 1 auto; max-width:160px; }
+  .report-grid--list .report-card-empty{ flex:1 1 auto; }
   .report-detail-back:hover{ color:var(--primary); }
