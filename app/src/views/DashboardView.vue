@@ -9,18 +9,16 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { useReports } from '../stores/useReports'
 import { useReportMembers } from '../composables/useReportMembers'
-import { useTheme } from '../composables/useTheme'
 import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/icons/Icon.vue'
 import ManageAccessModal from '../components/ManageAccessModal.vue'
+import SettingsModal from '../components/SettingsModal.vue'
 import BusyOverlay from '../components/BusyOverlay.vue'
 
 const router = useRouter()
-const { user, signOut } = useAuth()
-const { fetchMyReports, getMyRole, createReport, archiveReport, unarchiveReport } =
-  useReports()
+const { user } = useAuth()
+const { fetchMyReports, getMyRole, createReport, archiveReport } = useReports()
 const { inviteMember } = useReportMembers()
-const { theme, toggleTheme } = useTheme()
 
 // Mobile hamburger nav (ported from setMobileNavOpen/toggleMobileNav in
 // js/app.js ~line 893-904) — below the 900px breakpoint (responsive.css)
@@ -50,10 +48,8 @@ onUnmounted(() => {
 const loading = ref(true)
 const loadError = ref('')
 const reports = ref([])
-const showArchived = ref(false)
 
 const activeReports = computed(() => reports.value.filter((r) => !r.archived_at))
-const archivedReports = computed(() => reports.value.filter((r) => r.archived_at))
 
 async function loadReports() {
   loading.value = true
@@ -85,11 +81,6 @@ function statsOf(report) {
   )
 }
 
-async function handleSignOut() {
-  await signOut()
-  router.push('/login')
-}
-
 function openReport(id) {
   router.push(`/reports/${id}`)
 }
@@ -107,6 +98,15 @@ const manageAccessReportId = ref('')
 function openManageAccess(reportId) {
   manageAccessReportId.value = reportId
   manageAccessOpen.value = true
+}
+
+// ---------------------------------------------------------------------
+// Settings modal — Profile/Theme/Logout + Bin (recover/permanently
+// delete archived reports). Fully self-contained; see SettingsModal.vue.
+// ---------------------------------------------------------------------
+const settingsOpen = ref(false)
+function openSettings() {
+  settingsOpen.value = true
 }
 
 // ---------------------------------------------------------------------
@@ -233,16 +233,6 @@ async function handleArchive(report) {
   await loadReports()
   showToast('Report deleted.')
 }
-
-async function handleUnarchive(report) {
-  const { error } = await unarchiveReport(report.id)
-  if (error) {
-    showToast(error.message || 'Could not restore report.')
-    return
-  }
-  await loadReports()
-  showToast('Report restored.')
-}
 </script>
 
 <template>
@@ -265,17 +255,12 @@ async function handleUnarchive(report) {
           <Icon :name="mobileNavOpen ? 'x' : 'menu'" cls="icon-md nav-toggle-icon" />
         </button>
         <div id="head-actions" class="head-actions" :class="{ 'is-open': mobileNavOpen }">
-          <button class="btn" type="button" @click="toggleTheme">
-            <Icon :name="theme === 'dark' ? 'sun' : 'moon'" />
-            <span class="btn-label">{{ theme === 'dark' ? 'Light' : 'Dark' }}</span>
-          </button>
           <button class="btn primary" type="button" @click="openCreateModal">
             <Icon name="plus" />
             <span class="btn-label">New report</span>
           </button>
-          <button class="btn" type="button" @click="handleSignOut">
-            <Icon name="logOut" />
-            <span class="btn-label">Log out</span>
+          <button class="btn" type="button" @click="openSettings">
+            <Icon name="settings" /><span class="btn-label">Settings</span>
           </button>
         </div>
       </div>
@@ -384,34 +369,6 @@ async function handleUnarchive(report) {
         </div>
       </div>
     </div>
-
-    <template v-if="archivedReports.length > 0">
-      <button class="section-toggle" type="button" @click="showArchived = !showArchived">
-        {{ showArchived ? 'Hide' : 'Show' }} deleted reports ({{ archivedReports.length }})
-      </button>
-      <div v-if="showArchived" class="report-grid">
-        <div v-for="report in archivedReports" :key="report.id" class="report-card">
-          <div class="report-card-head">
-            <div>
-              <h2 class="report-card-title">{{ report.title }}</h2>
-              <p class="report-card-meta">Deleted {{ new Date(report.archived_at).toLocaleDateString() }}</p>
-            </div>
-            <span class="archived-badge">Deleted</span>
-          </div>
-          <div class="report-card-actions">
-            <button
-              v-if="myRole(report) === 'owner'"
-              class="btn"
-              type="button"
-              @click="handleUnarchive(report)"
-            >
-              <Icon name="rotateCcw" cls="icon-sm" />
-              <span class="btn-label">Restore</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </template>
   </main>
 
   <!-- Create-report modal -->
@@ -519,6 +476,8 @@ async function handleUnarchive(report) {
     @close="manageAccessOpen = false"
     @membership-changed="loadReports"
   />
+
+  <SettingsModal :open="settingsOpen" @close="settingsOpen = false" @reports-changed="loadReports" />
 
   <div class="toast" :class="{ show: toastVisible }">
     <span class="toast-msg">{{ toastMessage }}</span>

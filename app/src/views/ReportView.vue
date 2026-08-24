@@ -28,6 +28,7 @@ import ModuleCard from '../components/ModuleCard.vue'
 import StatTiles from '../components/StatTiles.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import ManageAccessModal from '../components/ManageAccessModal.vue'
+import SettingsModal from '../components/SettingsModal.vue'
 import BusyOverlay from '../components/BusyOverlay.vue'
 
 const route = useRoute()
@@ -354,6 +355,11 @@ async function handleDeleteReport() {
 // ---------------------------------------------------------------------
 const manageOpen = ref(false)
 
+// Settings modal — Profile/Theme/Logout + Bin. Fully self-contained; see
+// SettingsModal.vue. No @reports-changed here — this view holds no
+// reports list to refresh.
+const settingsOpen = ref(false)
+
 // After a successful ownership transfer inside ManageAccessModal, the
 // current user's own role may have changed — re-load so isOwner/myRole
 // (both derived from `members`) reflect it.
@@ -609,6 +615,9 @@ onUnmounted(() => {
             <Icon name="trash2" cls="icon-sm" />
             <span class="btn-label">Delete</span>
           </button>
+          <button class="btn" type="button" @click="settingsOpen = true">
+            <Icon name="settings" /><span class="btn-label">Settings</span>
+          </button>
         </div>
       </div>
 
@@ -727,6 +736,8 @@ onUnmounted(() => {
     @close="manageOpen = false"
     @membership-changed="onMembershipChanged"
   />
+
+  <SettingsModal :open="settingsOpen" @close="settingsOpen = false" />
 
   <!-- Bulk-mark confirm modal -->
   <div
