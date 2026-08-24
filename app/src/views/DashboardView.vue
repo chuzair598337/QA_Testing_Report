@@ -7,14 +7,16 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { useReports } from '../stores/useReports'
+import { useReportMembers } from '../composables/useReportMembers'
 import { useTheme } from '../composables/useTheme'
 import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/icons/Icon.vue'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
-const { fetchMyReports, getMyRole, createReport, archiveReport, unarchiveReport, inviteMember } =
+const { fetchMyReports, getMyRole, createReport, archiveReport, unarchiveReport } =
   useReports()
+const { inviteMember } = useReportMembers()
 const { theme, toggleTheme } = useTheme()
 
 // Mobile hamburger nav (ported from setMobileNavOpen/toggleMobileNav in
