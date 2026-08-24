@@ -66,13 +66,18 @@
   .head-actions .btn .btn-label {
     display: inline !important;
   }
-  .export-wrap {
+  /* Scoped to .head-chrome so this doesn't also stretch the unrelated
+     .menu-wrap ellipsis menus elsewhere (ModuleCard/SubModuleCard bulk-mark,
+     Dashboard report-card menu, ManageAccessModal sort/filter) — those live
+     outside .head-chrome and must keep their inline sizing. */
+  .head-chrome .menu-wrap {
     width: 100%;
   }
-  .export-wrap > .btn {
+  .head-chrome .menu-wrap > .icon-btn {
     width: 100%;
+    justify-content: center;
   }
-  .head-chrome .export-menu {
+  .head-chrome .report-menu {
     position: static;
     display: none;
     width: 100%;
@@ -80,7 +85,7 @@
     box-shadow: none;
     border-color: var(--border);
   }
-  .head-chrome .export-menu.open {
+  .head-chrome .report-menu.open {
     display: block;
   }
 

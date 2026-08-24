@@ -368,14 +368,18 @@ async function onMembershipChanged() {
 }
 
 // ---------------------------------------------------------------------
-// Export menu (Download PDF / Download JSON / Generate report) + Generate
-// report modal. Ported from js/app.js's export dropdown (~line 855) and the
-// Generate report modal (~line 1071-1487).
+// Report actions menu (Download PDF / Download JSON / Generate report /
+// Manage access / Delete — consolidated into one flat kebab dropdown by
+// Task 9; originally a standalone Export dropdown ported from js/app.js's
+// export dropdown, ~line 855) + Generate report modal (~line 1071-1487).
 // ---------------------------------------------------------------------
 const importExport = useImportExport()
 const { reportSettings } = importExport
 
-const exportMenuOpen = ref(false)
+const reportMenuOpen = ref(false)
+function toggleReportMenu() {
+  reportMenuOpen.value = !reportMenuOpen.value
+}
 const reportModalOpen = ref(false)
 const reportModalBox = ref(null)
 useModalFocus(reportModalOpen, reportModalBox)
@@ -392,12 +396,12 @@ const reportClipboardHtml = computed(() =>
 )
 
 function handleDownloadJson() {
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   importExport.downloadJson(reportTitle.value, tree.value)
 }
 
 async function handleDownloadPdf() {
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   pdfBusy.value = true
   // Snapshot + close any open modal so it isn't photographed into the
   // capture, then restore — same as the legacy downloadPdf()'s
@@ -422,7 +426,7 @@ async function handleDownloadPdf() {
 }
 
 function handleOpenReportModal() {
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   const anyCases = importExport.collectReportCases(tree.value, {
     all: true,
     passed: false,
@@ -469,16 +473,17 @@ function handleDownloadReport() {
 // js/app.js ~line 893-904) — at >900px .head-actions is a normal flex
 // row and this button/state is invisible/inert (see responsive.css);
 // below that, .head-actions is display:none unless .is-open, and this
-// toggle is the only way to reach Export/Manage access/Delete at all.
+// toggle is the only way to reach the report-actions menu (and Settings)
+// at all.
 const mobileNavOpen = ref(false)
 function toggleMobileNav() {
   mobileNavOpen.value = !mobileNavOpen.value
-  if (!mobileNavOpen.value) exportMenuOpen.value = false
+  if (!mobileNavOpen.value) reportMenuOpen.value = false
 }
 
 function closeAllMenus() {
   treeUi.closeMenu()
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   reportSettingsOpen.value = false
   mobileNavOpen.value = false
 }
@@ -580,24 +585,29 @@ onUnmounted(() => {
           <Icon :name="mobileNavOpen ? 'x' : 'menu'" cls="icon-md nav-toggle-icon" />
         </button>
         <div id="head-actions" class="head-actions" :class="{ 'is-open': mobileNavOpen }">
-          <div class="menu-wrap export-wrap">
+          <div class="menu-wrap">
             <button
-              class="btn"
               type="button"
-              :disabled="!statsView.total_tests || pdfBusy"
-              :aria-expanded="exportMenuOpen"
+              class="icon-btn"
+              :disabled="pdfBusy"
               aria-haspopup="true"
-              @click.stop="exportMenuOpen = !exportMenuOpen"
+              :aria-expanded="reportMenuOpen"
+              title="Report actions"
+              @click.stop="toggleReportMenu"
             >
-              <Icon name="download" cls="icon-sm" />
-              <span class="btn-label">{{ pdfBusy ? 'Generating…' : 'Export' }}</span>
+              <Icon name="ellipsisVertical" />
             </button>
-            <div class="dropdown-menu export-menu" :class="{ open: exportMenuOpen }" :inert="!exportMenuOpen">
-              <button type="button" class="dropdown-item" @click="handleDownloadPdf">
+            <div class="dropdown-menu report-menu" :class="{ open: reportMenuOpen }" :inert="!reportMenuOpen">
+              <button
+                type="button"
+                class="dropdown-item"
+                :disabled="!statsView.total_tests || pdfBusy"
+                @click="handleDownloadPdf"
+              >
                 <Icon name="download" cls="icon-sm" />
-                <span>Download PDF</span>
+                <span>{{ pdfBusy ? 'Generating…' : 'Download PDF' }}</span>
               </button>
-              <button type="button" class="dropdown-item" @click="handleDownloadJson">
+              <button type="button" class="dropdown-item" :disabled="!statsView.total_tests" @click="handleDownloadJson">
                 <Icon name="download" cls="icon-sm" />
                 <span>Download JSON</span>
               </button>
@@ -605,16 +615,20 @@ onUnmounted(() => {
                 <Icon name="fileJson" cls="icon-sm" />
                 <span>Generate report</span>
               </button>
+              <template v-if="isOwner">
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-item" @click="manageOpen = true; reportMenuOpen = false">
+                  <Icon name="users" cls="icon-sm" />
+                  <span>Manage access</span>
+                </button>
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-item" @click="handleDeleteReport">
+                  <Icon name="trash2" cls="icon-sm" />
+                  <span>Delete</span>
+                </button>
+              </template>
             </div>
           </div>
-          <button v-if="isOwner" class="btn" type="button" @click="manageOpen = true">
-            <Icon name="users" cls="icon-sm" />
-            <span class="btn-label">Manage access</span>
-          </button>
-          <button v-if="isOwner" class="btn danger" type="button" @click="handleDeleteReport">
-            <Icon name="trash2" cls="icon-sm" />
-            <span class="btn-label">Delete</span>
-          </button>
           <button class="btn" type="button" @click="settingsOpen = true">
             <Icon name="settings" /><span class="btn-label">Settings</span>
           </button>
