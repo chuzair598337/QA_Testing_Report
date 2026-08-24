@@ -279,6 +279,13 @@ async function unarchiveReport(reportId) {
   return supabase.from('reports').update({ archived_at: null }).eq('id', reportId)
 }
 
+// Hard delete — Bin-only, irreversible. Requires archived_at already set
+// (enforced both by the UI flow and server-side by the
+// reports_delete_archived_owner RLS policy from Task 3).
+async function deleteReportPermanently(reportId) {
+  return supabase.from('reports').delete().eq('id', reportId)
+}
+
 // ---------------------------------------------------------------------
 // Test actions (status/note edits — the only columns editors may touch;
 // enforced server-side by the tests_update_scope trigger, not just here)
@@ -300,6 +307,7 @@ export function useReports() {
     createReport,
     archiveReport,
     unarchiveReport,
+    deleteReportPermanently,
     updateTestStatus,
     updateTestNote,
   }
