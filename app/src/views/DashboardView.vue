@@ -4,7 +4,7 @@
 // by role. Manage Access (member list + role edits + invites) is the
 // shared, portable ManageAccessModal.vue — hosted directly here (opens in
 // place, no navigation) and also on ReportView.vue.
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/useAuth'
 import { useReports } from '../stores/useReports'
@@ -32,6 +32,9 @@ function onDocumentClick(e) {
   if (!e.target.closest('.head-actions') && !e.target.closest('.nav-toggle')) {
     mobileNavOpen.value = false
   }
+  if (!e.target.closest('.menu-wrap')) {
+    closeCardMenu()
+  }
 }
 function onDocumentKeydown(e) {
   if (e.key === 'Escape') mobileNavOpen.value = false
@@ -39,10 +42,34 @@ function onDocumentKeydown(e) {
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKeydown)
+  window.addEventListener('scroll', closeCardMenu, true)
 })
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
   document.removeEventListener('keydown', onDocumentKeydown)
+  window.removeEventListener('scroll', closeCardMenu, true)
+})
+
+// ---------------------------------------------------------------------
+// Report card 3-dot menu (Manage access / Delete) — floating teleported
+// dropdown, same position-from-trigger-rect pattern as ModuleCard.vue's
+// module-options menu (see that file for the full rationale).
+// ---------------------------------------------------------------------
+const openMenuReportId = ref(null)
+const menuStyle = ref({})
+const menuTriggerRefs = {}
+function toggleCardMenu(reportId) {
+  openMenuReportId.value = openMenuReportId.value === reportId ? null : reportId
+}
+function closeCardMenu() {
+  openMenuReportId.value = null
+}
+watch(openMenuReportId, async (id) => {
+  if (!id) return
+  await nextTick()
+  const rect = menuTriggerRefs[id]?.getBoundingClientRect()
+  if (!rect) return
+  menuStyle.value = { top: `${rect.bottom + 4}px`, right: `${window.innerWidth - rect.right}px` }
 })
 
 const loading = ref(true)
@@ -297,13 +324,51 @@ async function handleArchive(report) {
     </div>
 
     <div v-else class="report-grid">
-      <div v-for="report in activeReports" :key="report.id" class="report-card">
+      <div v-for="report in activeReports" :key="report.id" class="report-card" @click="openReport(report.id)">
         <div class="report-card-head">
           <div>
             <h2 class="report-card-title">{{ report.title }}</h2>
             <p class="report-card-meta">{{ new Date(report.created_at).toLocaleDateString() }}</p>
           </div>
-          <span class="role-badge" :class="myRole(report)">{{ myRole(report) }}</span>
+          <div class="report-card-head-right">
+            <span class="role-badge" :class="myRole(report)">{{ myRole(report) }}</span>
+            <div v-if="myRole(report) === 'owner'" class="menu-wrap">
+              <button
+                type="button"
+                class="icon-btn"
+                :ref="(el) => (menuTriggerRefs[report.id] = el)"
+                aria-haspopup="true"
+                :aria-expanded="openMenuReportId === report.id"
+                title="More options"
+                @click.stop="toggleCardMenu(report.id)"
+              >
+                <Icon name="ellipsisVertical" />
+              </button>
+              <Teleport to="body">
+                <div
+                  class="dropdown-menu dropdown-menu--floating"
+                  :class="{ open: openMenuReportId === report.id }"
+                  :style="menuStyle"
+                  :inert="openMenuReportId !== report.id"
+                >
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    @click.stop="openManageAccess(report.id); closeCardMenu()"
+                  >
+                    <Icon name="users" cls="icon-sm" /><span>Manage access</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    @click.stop="handleArchive(report); closeCardMenu()"
+                  >
+                    <Icon name="trash2" cls="icon-sm" /><span>Delete</span>
+                  </button>
+                </div>
+              </Teleport>
+            </div>
+          </div>
         </div>
 
         <div v-if="statsOf(report).total_tests === 0" class="report-card-empty">
@@ -345,28 +410,6 @@ async function handleArchive(report) {
             <div class="progress-label progress-label--on-track">{{ statsOf(report).pass_percent }}% passed</div>
           </div>
         </template>
-
-        <div class="report-card-actions">
-          <button class="btn" type="button" @click="openReport(report.id)">Open</button>
-          <button
-            v-if="myRole(report) === 'owner'"
-            class="btn"
-            type="button"
-            @click="openManageAccess(report.id)"
-          >
-            <Icon name="users" cls="icon-sm" />
-            <span class="btn-label">Manage access</span>
-          </button>
-          <button
-            v-if="myRole(report) === 'owner'"
-            class="btn danger"
-            type="button"
-            @click="handleArchive(report)"
-          >
-            <Icon name="trash2" cls="icon-sm" />
-            <span class="btn-label">Delete</span>
-          </button>
-        </div>
       </div>
     </div>
   </main>
