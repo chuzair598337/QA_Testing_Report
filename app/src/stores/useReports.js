@@ -280,29 +280,6 @@ async function unarchiveReport(reportId) {
 }
 
 // ---------------------------------------------------------------------
-// Membership actions
-//
-// Invite-by-email: report_members can only ever be written directly by
-// (a) a report's owner inserting an arbitrary member row, or (b) a
-// brand-new report's creator bootstrapping their own owner row (see the
-// report_members_insert / report_members_insert_bootstrap policies in
-// the Phase 2 migration). Neither policy — nor anything else reachable
-// with only the anon key — lets the client resolve an email address to a
-// user_id (no admin API, no profiles table), so this cannot be a direct
-// table write from here.
-//
-// Instead this calls the `invite-member` Edge Function, which holds the
-// service-role key server-side (never in the browser) to: verify the
-// caller actually owns this report (via the caller's own JWT, respecting
-// RLS, before touching anything privileged), look up whether the email
-// already has an account, and either insert the member row directly
-// (existing account) or call admin.inviteUserByEmail() (new account —
-// its raw_user_meta_data carries invited_report_id/invited_role, which a
-// Postgres trigger reads to auto-attach report_members the moment that
-// invite is accepted and the account is created).
-// ---------------------------------------------------------------------
-
-// ---------------------------------------------------------------------
 // Test actions (status/note edits — the only columns editors may touch;
 // enforced server-side by the tests_update_scope trigger, not just here)
 // ---------------------------------------------------------------------

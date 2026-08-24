@@ -1,12 +1,15 @@
 <script setup>
 // Real single-report view (Phase 4 + Phase 5): modules/sub-modules/tests
 // tree with status + note editing (role-gated), stats/progress, pin/lock,
-// filters/jump-nav, export (PDF/JSON), Generate report, and the owner-only
-// Manage Access panel (member list, role changes, invites, removal).
+// filters/jump-nav, export (PDF/JSON), Generate report, and the trigger
+// button for the owner-only Manage Access panel — the panel's own state
+// (member list, role changes, invites, removal) lives in
+// ManageAccessModal.vue (Task 8/6 of the 2026-08-24 design), this file
+// just renders the button and passes props/handles the open flag.
 //
 // Phase 4 built the data/role-gating layer (all reused unchanged here:
 // fetchReportDetail/getMyRole/updateTestStatus/updateTestNote from
-// useReports.js, plus the whole Manage Access modal below). Phase 5 adds
+// useReports.js). Phase 5 adds
 // the useReportRunner.js/useTreeUiState.js/useImportExport.js layers and
 // splits the tree markup into ModuleCard/SubModuleCard/TestRow/StatTiles/
 // ProgressBar, porting pin/lock/filter/jump-nav/scroll-collapse/export
@@ -267,8 +270,10 @@ function confirmYes() {
   if (cb) cb()
 }
 
-// Focus management for all three modals (AA audit — see useModalFocus.js).
-// ESC and backdrop-click are wired separately below/in the template.
+// Focus management for the two modals this file still owns (confirm and
+// generate-report — AA audit, see useModalFocus.js). Manage Access moved
+// its own focus management into ManageAccessModal.vue (Task 8/6). ESC and
+// backdrop-click are wired separately below/in the template.
 const confirmModalBox = ref(null)
 useModalFocus(
   () => confirmModal.open,

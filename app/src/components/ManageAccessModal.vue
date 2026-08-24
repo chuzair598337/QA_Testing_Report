@@ -14,7 +14,11 @@ import MemberCard from './MemberCard.vue'
 const props = defineProps({
   open: { type: Boolean, required: true },
   reportId: { type: String, required: true },
-  currentUserId: { type: String, required: true },
+  // Not required: on a hard page refresh, ReportView.vue's `user?.id` can
+  // briefly be undefined while the auth store is still loading, before
+  // this modal is ever opened — default avoids a dev-mode prop-validation
+  // warning for a state that's never actually visible to a user.
+  currentUserId: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'membership-changed'])
 
@@ -37,6 +41,16 @@ useModalFocus(
 const loading = ref(true)
 const loadError = ref('')
 const rows = ref([])
+// Local status line for Resend/Revoke/Remove feedback — this modal has no
+// toast/message channel today, so reuse the existing auth-error/
+// auth-success class pattern (see DashboardView.vue's invite feedback).
+const actionMessage = ref('')
+const actionMessageKind = ref('success') // 'success' | 'error'
+
+function setActionMessage(text, kind) {
+  actionMessage.value = text
+  actionMessageKind.value = kind
+}
 
 async function load() {
   loading.value = true
@@ -56,6 +70,7 @@ watch(
     if (!isOpen) return
     viewStep.value = 'list'
     addOpen.value = false
+    actionMessage.value = ''
     load()
   },
 )
@@ -146,6 +161,21 @@ const roleChangeBusy = ref({})
 const viewStep = ref('list') // 'list' | 'transfer-confirm'
 const pendingTransfer = ref(null) // { memberId, name }
 
+// The transfer-confirm step unmounts the member list (v-if="viewStep ===
+// 'list'"), which unmounts whatever <select> had focus and drops it to
+// <body> — silently breaking both Tab order and ESC (the overlay's
+// @keydown only fires for events bubbling from inside it). A second,
+// independent useModalFocus watch fixes both by moving focus back into
+// modalBox whenever this step becomes active. (Declared here, after
+// viewStep, rather than immediately next to the first useModalFocus call
+// above, since referencing viewStep.value any earlier would hit its
+// temporal dead zone — watch() evaluates its getter synchronously on
+// setup.)
+useModalFocus(
+  () => viewStep.value === 'transfer-confirm',
+  modalBox,
+)
+
 function onRoleChange(memberId, newRoleValue) {
   if (newRoleValue === 'owner') {
     const row = rows.value.find((r) => r.id === memberId)
@@ -189,27 +219,35 @@ function cancelTransfer() {
 async function onRemove(memberId) {
   const { error } = await removeMember(memberId)
   if (error) {
-    loadError.value = error
+    setActionMessage(error, 'error')
     return
   }
+  // removeMember() only returns { data: true } on success — no message
+  // from the server to surface, so use a fixed confirmation line.
+  setActionMessage('Member removed.', 'success')
   await load()
 }
 
 async function onResend(inviteId) {
-  const { error } = await resendInvite(props.reportId, inviteId)
+  const { data, error } = await resendInvite(props.reportId, inviteId)
   if (error) {
-    loadError.value = error
+    setActionMessage(error, 'error')
     return
   }
+  // Covers the 'resent' case and the 'noop' case (spec: "Already up to
+  // date") the same way — both carry a human-readable data.message and
+  // neither is a failure, so both use the success styling.
+  setActionMessage(data?.message || 'Invite resent.', 'success')
   await load()
 }
 
 async function onRevoke(inviteId) {
-  const { error } = await revokeInvite(props.reportId, inviteId)
+  const { data, error } = await revokeInvite(props.reportId, inviteId)
   if (error) {
-    loadError.value = error
+    setActionMessage(error, 'error')
     return
   }
+  setActionMessage(data?.message || 'Invite revoked.', 'success')
   await load()
 }
 </script>
@@ -286,6 +324,16 @@ async function onRevoke(inviteId) {
         </div>
 
         <p v-if="loadError" class="auth-error">{{ loadError }}</p>
+        <div
+          v-if="actionMessage"
+          :class="actionMessageKind === 'error' ? 'auth-error' : 'auth-success'"
+          style="display: flex; align-items: center; justify-content: space-between; gap: 8px"
+        >
+          <span>{{ actionMessage }}</span>
+          <button type="button" class="icon-btn" aria-label="Dismiss message" @click="actionMessage = ''">
+            <Icon name="x" cls="icon-sm" />
+          </button>
+        </div>
 
         <div class="manage-access-list">
           <p v-if="loading" class="empty-hint">Loading members…</p>

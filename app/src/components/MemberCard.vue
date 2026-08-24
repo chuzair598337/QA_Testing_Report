@@ -53,7 +53,10 @@ function relativeInviteAge(iso) {
         </div>
         <div class="member-card-email">{{ row.email }}</div>
         <div v-if="row.status === 'pending'" class="member-invite-meta">
-          Invited {{ relativeInviteAge(row.created_at) }}
+          <template v-if="row.resent_at">
+            Invited {{ relativeInviteAge(row.created_at) }} · Resent {{ relativeInviteAge(row.resent_at) }}
+          </template>
+          <template v-else> Invited {{ relativeInviteAge(row.created_at) }} </template>
         </div>
       </div>
     </div>
