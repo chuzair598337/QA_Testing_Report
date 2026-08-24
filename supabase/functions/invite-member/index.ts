@@ -70,7 +70,12 @@ async function handleInvite(
     return json({ error: 'Could not look up existing users: ' + listError.message }, 500)
   }
 
-  const normalizedEmail = email.toLowerCase()
+  // email is already normalized (lowercased) by the Deno.serve handler
+  // before handleInvite is called — every write/lookup below uses it
+  // consistently, so private.attach_invited_membership()'s exact-match
+  // trigger (and the partial-unique "already invited" constraint) can't
+  // be bypassed by varying case.
+  const normalizedEmail = email
   const existing = listData.users.find((u) => u.email?.toLowerCase() === normalizedEmail)
 
   if (existing) {
@@ -81,7 +86,7 @@ async function handleInvite(
       return json({ error: insertError.message }, 500)
     }
     return json(
-      { status: 'added', message: `${email} already has an account and was added directly.` },
+      { status: 'added', message: `${normalizedEmail} already has an account and was added directly.` },
       200,
     )
   }
@@ -90,16 +95,16 @@ async function handleInvite(
   // invite), no email gets sent for a row that doesn't exist.
   const { error: inviteRowError } = await adminClient
     .from('report_invites')
-    .insert({ report_id: reportId, email, role, invited_by: callerId })
+    .insert({ report_id: reportId, email: normalizedEmail, role, invited_by: callerId })
   if (inviteRowError) {
     if (inviteRowError.code === '23505') {
-      return json({ error: `${email} already has a pending invite.` }, 409)
+      return json({ error: `${normalizedEmail} already has a pending invite.` }, 409)
     }
     return json({ error: inviteRowError.message }, 500)
   }
 
   const origin = req.headers.get('origin') || ''
-  const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
+  const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(normalizedEmail, {
     redirectTo: `${origin}/auth/callback`,
     data: { invited_report_id: reportId, invited_role: role },
   })
@@ -110,12 +115,12 @@ async function handleInvite(
       .from('report_invites')
       .delete()
       .eq('report_id', reportId)
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .eq('status', 'pending')
     return json({ error: inviteError.message }, 500)
   }
 
-  return json({ status: 'invited', message: `Invite email sent to ${email}.` }, 200)
+  return json({ status: 'invited', message: `Invite email sent to ${normalizedEmail}.` }, 200)
 }
 
 async function handleResend(
@@ -251,7 +256,11 @@ Deno.serve(async (req: Request) => {
     if (typeof email !== 'string' || !email.trim() || !['editor', 'viewer'].includes(role)) {
       return json({ error: 'email and role (editor|viewer) are required' }, 400)
     }
-    return await handleInvite(adminClient, userData.user.id, reportId, email.trim(), role, req)
+    // Normalize (trim + lowercase) once, here, so handleInvite never sees
+    // non-normalized input — every downstream write/lookup (report_invites
+    // insert, inviteUserByEmail, the rollback delete, the listUsers
+    // comparison) then uses the exact same value consistently.
+    return await handleInvite(adminClient, userData.user.id, reportId, email.trim().toLowerCase(), role, req)
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500)
   }
