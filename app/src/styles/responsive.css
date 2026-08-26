@@ -17,6 +17,14 @@
     flex-wrap: nowrap;
     gap: 10px;
     margin-bottom: 0;
+    /* .head-actions below is positioned absolute + top:100% to sit right
+       under the title/hamburger row. Without this, its nearest positioned
+       ancestor is .head-inner (which also contains .head-metrics stacked
+       below .head-top) — so "100%" resolved to the bottom of the whole
+       title+KPI block, not just this row, and the mobile action panel
+       opened BELOW the KPI/progress/search block instead of overlaying
+       right on top of it. */
+    position: relative;
   }
   .head-title-block {
     flex: 1 1 auto;
@@ -87,6 +95,23 @@
   }
   .head-chrome .report-menu.open {
     display: block;
+  }
+  /* The hamburger panel should show every report action inline as one flat
+     list the moment it opens — the kebab ("More options") second-tap only
+     makes sense on the crowded desktop header; the mobile panel already
+     has the room to lay everything out at once. More specific than the
+     two rules above, so it wins without !important; the matching
+     `:inert="!reportMenuOpen && !mobileNavOpen"` binding on the menu
+     element (ReportView.vue) is what actually makes these items
+     clickable/focusable here, not just visible. */
+  .head-chrome .head-actions.is-open .menu-wrap > .icon-btn {
+    display: none;
+  }
+  .head-chrome .head-actions.is-open .report-menu {
+    display: block;
+    margin-top: 0;
+    border: none;
+    padding: 0;
   }
 
   .stat-grid {

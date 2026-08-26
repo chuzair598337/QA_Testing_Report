@@ -1424,6 +1424,23 @@
   .toast-action:hover{ background:var(--hover-bg); }
   .toast-action[hidden]{ display:none; }
 
+  /* Typed toasts (error/warning/success/info) — a colored left border +
+     matching leading-icon color, reusing the same status tokens already
+     used for status pills/dropdown-item.danger elsewhere, rather than a
+     fully-colored toast background (keeps the message text at the usual
+     --ink contrast in both themes instead of re-deriving text-on-color
+     contrast for four more color pairs). Default (no type class) reads as
+     the plain neutral toast this app always had. */
+  .toast-icon{ flex-shrink:0; }
+  .toast--error{ border-left:4px solid var(--fail); }
+  .toast--error .toast-icon{ color:var(--fail); }
+  .toast--warning{ border-left:4px solid var(--warn); }
+  .toast--warning .toast-icon{ color:var(--warn); }
+  .toast--success{ border-left:4px solid var(--pass); }
+  .toast--success .toast-icon{ color:var(--pass); }
+  .toast--info{ border-left:4px solid var(--accent); }
+  .toast--info .toast-icon{ color:var(--accent); }
+
   /* ---------- Phase 4 additions: Dashboard / ReportView / Manage access ---------- */
 
   .report-grid{

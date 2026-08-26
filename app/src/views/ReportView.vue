@@ -229,7 +229,7 @@ async function handleStatusChange(testVm, newStatus) {
   statusBusy[test.id] = false
   if (error) {
     test.status = prev
-    showToast(error.message || 'Could not update status.')
+    showToast(error.message || 'Could not update status.', { type: 'error' })
   }
 }
 
@@ -241,7 +241,7 @@ function handleNoteInput(testVm, value) {
   noteDebounceTimers[test.id] = setTimeout(async () => {
     const { error } = await updateTestNote(test.id, value)
     if (error) {
-      showToast(error.message || 'Could not save note.')
+      showToast(error.message || 'Could not save note.', { type: 'error' })
       return
     }
     test.note = value || null
@@ -298,7 +298,7 @@ function handleBulkMark(testVms, targetStatus, scopeLabel) {
         const { error } = await updateTestStatus(t.id, targetStatus)
         if (error) {
           t.status = prev
-          showToast(error.message || 'Could not update one or more tests.')
+          showToast(error.message || 'Could not update one or more tests.', { type: 'error' })
         }
       }
     } finally {
@@ -343,7 +343,7 @@ function handleResetAll() {
     }
   }
   if (affected.length === 0) {
-    showToast('Nothing to reset — every test is already pending with no notes.')
+    showToast('Nothing to reset — every test is already pending with no notes.', { type: 'info' })
     return
   }
   openConfirm(
@@ -376,14 +376,14 @@ async function applyResetAll(affectedVms) {
       if (statusError || noteError) {
         t.status = prevStatus
         t.note = prevNote
-        showToast((statusError || noteError).message || 'Could not reset one or more tests.')
+        showToast((statusError || noteError).message || 'Could not reset one or more tests.', { type: 'error' })
       }
     }
   } finally {
     bulkMarkBusy.value = false
   }
 
-  showToast('All test cases reset.', 6000, { label: 'Undo', onAction: undoReset })
+  showToast('All test cases reset.', { type: 'success', duration: 6000, action: { label: 'Undo', onAction: undoReset } })
 }
 
 // Restores every reset test's prior status+note via a fresh write-back to
@@ -408,7 +408,7 @@ async function undoReset() {
         updateTestNote(entry.id, entry.note || ''),
       ])
       if (statusError || noteError) {
-        showToast((statusError || noteError).message || 'Could not fully undo the reset.')
+        showToast((statusError || noteError).message || 'Could not fully undo the reset.', { type: 'error' })
       }
     }
   } finally {
@@ -424,6 +424,14 @@ const toastVisible = ref(false)
 const toastAction = ref(null)
 const toastTop = ref(20)
 let toastTimer = null
+
+// One of 'info' | 'success' | 'warning' | 'error' — drives the toast's left
+// accent border/icon color (base.css .toast--*) and which leading icon
+// shows. Kept as a small closed set rather than an arbitrary CSS class so
+// every call site is forced to pick a real severity instead of drifting
+// into ad-hoc styling per call.
+const TOAST_ICONS = { info: 'info', success: 'check', warning: 'alertTriangle', error: 'alertCircle' }
+const toastType = ref('info')
 
 // Template refs on .head-chrome/.head-metrics (bound in the template below)
 // — used to position the toast just below whatever header chrome is
@@ -448,9 +456,14 @@ function positionToast() {
 // `action`, when given, is { label, onAction } — shows a clickable action
 // button next to the message (e.g. Reset-all's "Undo") instead of the
 // plain text-only toast. Ported from the legacy showToast()'s 3rd arg
-// (js/app.js, commit 5048dc7).
-function showToast(message, duration = 3200, action = null) {
+// (js/app.js, commit 5048dc7), extended with `type` for the
+// error/warning/success/info variants — an options object rather than
+// more positional params since most calls now only need one of the three
+// optional fields and positional `(msg, undefined, undefined, 'error')`
+// calls would read worse than named ones.
+function showToast(message, { type = 'info', duration = 3200, action = null } = {}) {
   toastMessage.value = message
+  toastType.value = type
   toastAction.value = action
   positionToast()
   toastVisible.value = true
@@ -480,7 +493,7 @@ function handleToastAction() {
 async function handleDeleteReport() {
   const { error } = await archiveReport(reportId)
   if (error) {
-    showToast(error || 'Could not delete report.')
+    showToast(error || 'Could not delete report.', { type: 'error' })
     return
   }
   router.push('/dashboard')
@@ -556,7 +569,7 @@ async function handleDownloadPdf() {
   try {
     await importExport.downloadPdf(document.body)
   } catch {
-    showToast('PDF generation failed. Please try again.')
+    showToast('PDF generation failed. Please try again.', { type: 'error' })
   } finally {
     document.body.classList.remove('generating-pdf')
     manageOpen.value = wasManageOpen
@@ -574,7 +587,7 @@ function handleOpenReportModal() {
     failedOnly: false,
   })
   if (anyCases.total === 0) {
-    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.')
+    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.', { type: 'warning' })
     return
   }
   reportCopyLabel.value = 'Copy to clipboard'
@@ -593,7 +606,7 @@ function onReportSettingToggle(key, checked) {
 async function handleCopyReport() {
   const { error } = await importExport.copyReportToClipboard(reportPlainText.value, reportClipboardHtml.value)
   if (error) {
-    showToast(error)
+    showToast(error, { type: 'error' })
     return
   }
   reportCopyLabel.value = 'Copied!'
@@ -737,7 +750,11 @@ onUnmounted(() => {
             >
               <Icon name="ellipsisVertical" />
             </button>
-            <div class="dropdown-menu report-menu" :class="{ open: reportMenuOpen }" :inert="!reportMenuOpen">
+            <div
+              class="dropdown-menu report-menu"
+              :class="{ open: reportMenuOpen }"
+              :inert="!reportMenuOpen && !mobileNavOpen"
+            >
               <button
                 type="button"
                 class="dropdown-item"
@@ -1032,7 +1049,12 @@ onUnmounted(() => {
 
   <BusyOverlay fixed :active="pdfBusy" label="Generating PDF…" />
 
-  <div class="toast" :class="{ show: toastVisible }" :style="{ top: toastTop + 'px' }">
+  <div
+    class="toast"
+    :class="[`toast--${toastType}`, { show: toastVisible }]"
+    :style="{ top: toastTop + 'px' }"
+  >
+    <Icon :name="TOAST_ICONS[toastType]" cls="icon-sm toast-icon" />
     <span class="toast-msg">{{ toastMessage }}</span>
     <button type="button" class="toast-action" :hidden="!toastAction" @click="handleToastAction">
       {{ toastAction?.label }}
