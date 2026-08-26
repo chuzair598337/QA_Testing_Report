@@ -268,22 +268,47 @@ async function insertHierarchy(reportId, modulesJson) {
 // Report-level actions
 // ---------------------------------------------------------------------
 
-// Soft delete only — the schema has no delete policy for `reports` (see
-// Phase 2 migration), so "Delete" in the UI sets archived_at rather than
-// removing the row.
+// Soft delete only — the schema has no *unscoped* delete policy for
+// `reports` (see Phase 2 migration; Phase 11 added a narrow archived+owner
+// -only one — see deleteReportPermanently below), so "Delete" in the UI
+// sets archived_at rather than removing the row.
+//
+// All three functions below share the same shape: PostgREST returns
+// error:null whether an update/delete touched one row or zero (e.g. RLS
+// silently denied it), so each asks for the touched row back via
+// .select('id') and treats an empty result as a denial, not a success.
 async function archiveReport(reportId) {
-  return supabase.from('reports').update({ archived_at: new Date().toISOString() }).eq('id', reportId)
+  const { data, error } = await supabase
+    .from('reports')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', reportId)
+    .select('id')
+  if (error) return { data: null, error: error.message }
+  if (!data?.length) return { data: null, error: 'Could not delete this report — you may not have permission.' }
+  return { data, error: null }
 }
 
 async function unarchiveReport(reportId) {
-  return supabase.from('reports').update({ archived_at: null }).eq('id', reportId)
+  const { data, error } = await supabase
+    .from('reports')
+    .update({ archived_at: null })
+    .eq('id', reportId)
+    .select('id')
+  if (error) return { data: null, error: error.message }
+  if (!data?.length) return { data: null, error: 'Could not restore this report — you may not have permission.' }
+  return { data, error: null }
 }
 
 // Hard delete — Bin-only, irreversible. Requires archived_at already set
 // (enforced both by the UI flow and server-side by the
-// reports_delete_archived_owner RLS policy from Task 3).
+// reports_delete_archived_owner RLS policy from Task 3/Phase 11).
 async function deleteReportPermanently(reportId) {
-  return supabase.from('reports').delete().eq('id', reportId)
+  const { data, error } = await supabase.from('reports').delete().eq('id', reportId).select('id')
+  if (error) return { data: null, error: error.message }
+  if (!data?.length) {
+    return { data: null, error: 'Could not permanently delete this report — you may not have permission.' }
+  }
+  return { data, error: null }
 }
 
 // ---------------------------------------------------------------------

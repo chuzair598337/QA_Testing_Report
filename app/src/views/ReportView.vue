@@ -340,7 +340,7 @@ function showToast(message) {
 async function handleDeleteReport() {
   const { error } = await archiveReport(reportId)
   if (error) {
-    showToast(error.message || 'Could not delete report.')
+    showToast(error || 'Could not delete report.')
     return
   }
   router.push('/dashboard')
@@ -622,7 +622,7 @@ onUnmounted(() => {
                   <span>Manage access</span>
                 </button>
                 <div class="dropdown-divider"></div>
-                <button type="button" class="dropdown-item" @click="handleDeleteReport">
+                <button type="button" class="dropdown-item danger" @click="handleDeleteReport">
                   <Icon name="trash2" cls="icon-sm" />
                   <span>Delete</span>
                 </button>

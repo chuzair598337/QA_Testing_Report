@@ -20,7 +20,7 @@ const emit = defineEmits(['close', 'reports-changed'])
 const router = useRouter()
 const { user, signOut } = useAuth()
 const { theme, setTheme } = useTheme()
-const { fetchMyReports, unarchiveReport, deleteReportPermanently } = useReports()
+const { fetchMyReports, getMyRole, unarchiveReport, deleteReportPermanently } = useReports()
 
 const modalBox = ref(null)
 useModalFocus(
@@ -94,12 +94,23 @@ async function loadBin() {
   archivedReports.value = data.filter((r) => r.archived_at)
 }
 
+// Same "is this report's current user the owner" convention as
+// DashboardView.vue's myRole() — fetchMyReports() returns every report the
+// user is a MEMBER of (owner, editor, or viewer), not just ones they own,
+// so an archived report a non-owner was only invited to still shows up
+// here. It stays visible (so they know it exists / who owns it) but its
+// Recover/Delete-permanently buttons are gated to owners only below —
+// both actions are RLS-denied server-side for non-owners anyway.
+function myRole(report) {
+  return getMyRole(report, user.value?.id)
+}
+
 async function onRecover(report) {
   recoverBusy.value = { ...recoverBusy.value, [report.id]: true }
   const { error } = await unarchiveReport(report.id)
   recoverBusy.value = { ...recoverBusy.value, [report.id]: false }
   if (error) {
-    binError.value = error.message || 'Could not restore report.'
+    binError.value = error || 'Could not restore report.'
     return
   }
   await loadBin()
@@ -124,7 +135,7 @@ async function confirmHardDelete() {
   binViewStep.value = 'list'
   pendingHardDelete.value = null
   if (error) {
-    binError.value = error.message || 'Could not permanently delete report.'
+    binError.value = error || 'Could not permanently delete report.'
     return
   }
   await loadBin()
@@ -238,7 +249,7 @@ async function handleLogout() {
                       Deleted {{ new Date(report.archived_at).toLocaleDateString() }}
                     </div>
                   </div>
-                  <div class="bin-item-actions">
+                  <div v-if="myRole(report) === 'owner'" class="bin-item-actions">
                     <button
                       type="button"
                       class="btn"
@@ -257,6 +268,9 @@ async function handleLogout() {
                       <Icon name="trash2" cls="icon-sm" />
                       <span>Delete permanently</span>
                     </button>
+                  </div>
+                  <div v-else class="settings-profile-email bin-item-readonly">
+                    Only the owner can recover or permanently delete this report.
                   </div>
                 </div>
               </div>

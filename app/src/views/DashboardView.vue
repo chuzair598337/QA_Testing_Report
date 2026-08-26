@@ -274,7 +274,7 @@ async function submitInvite() {
 async function handleArchive(report) {
   const { error } = await archiveReport(report.id)
   if (error) {
-    showToast(error.message || 'Could not delete report.')
+    showToast(error || 'Could not delete report.')
     return
   }
   await loadReports()
@@ -366,7 +366,17 @@ async function handleArchive(report) {
       </div>
 
       <div class="report-grid" :class="{ 'report-grid--list': viewMode === 'list' }">
-        <div v-for="report in activeReports" :key="report.id" class="report-card" @click="openReport(report.id)">
+        <div
+          v-for="report in activeReports"
+          :key="report.id"
+          class="report-card"
+          role="button"
+          tabindex="0"
+          :aria-label="`Open ${report.title}`"
+          @click="openReport(report.id)"
+          @keydown.enter="openReport(report.id)"
+          @keydown.space.prevent="openReport(report.id)"
+        >
           <div class="report-card-head">
             <div>
               <h2 class="report-card-title">{{ report.title }}</h2>
@@ -402,7 +412,7 @@ async function handleArchive(report) {
                     </button>
                     <button
                       type="button"
-                      class="dropdown-item"
+                      class="dropdown-item danger"
                       @click.stop="handleArchive(report); closeCardMenu()"
                     >
                       <Icon name="trash2" cls="icon-sm" /><span>Delete</span>
