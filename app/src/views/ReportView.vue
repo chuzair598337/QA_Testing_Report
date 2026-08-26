@@ -320,18 +320,158 @@ function handleBulkMark(testVms, targetStatus, scopeLabel) {
 }
 
 // ---------------------------------------------------------------------
+// Reset all (report-wide) + one-level Undo. Ported from the legacy static
+// app's Reset-all + Undo (js/app.js, commits 5048dc7/c13ae12), adapted to
+// write through updateTestStatus/updateTestNote since status/notes are
+// server-persisted and shared here, not just in-memory. Unlike the
+// module/sub-module-scoped bulk-mark above, this walks the whole report.
+// ---------------------------------------------------------------------
+const lastResetSnapshot = ref(null)
+
+function handleResetAll() {
+  reportMenuOpen.value = false
+  const affected = []
+  for (const mod of tree.value) {
+    // Skipping a locked module skips all its sub-modules/tests with it —
+    // matches "locked cases can't have their status or note edited".
+    if (treeUi.lockedModules[mod.id]) continue
+    for (const sm of mod.subModules) {
+      if (treeUi.lockedSubModules[sm.id]) continue
+      for (const t of sm.tests) {
+        if (t.status !== 'pending' || (t.note && t.note.trim())) affected.push(t)
+      }
+    }
+  }
+  if (affected.length === 0) {
+    showToast('Nothing to reset — every test is already pending with no notes.')
+    return
+  }
+  openConfirm(
+    'Reset all?',
+    `This clears status and notes on ${affected.length} test${affected.length === 1 ? '' : 's'} across this report. You can undo it right after.`,
+    () => applyResetAll(affected),
+  )
+}
+
+async function applyResetAll(affectedVms) {
+  const realTests = affectedVms.map((tv) => findTest(tv.id)).filter(Boolean)
+  // Single most-recent-only slot (not a stack) — overwritten by the next
+  // Reset, and consumed/cleared by Undo. Both "only the most recent reset
+  // is undoable" and "cleared on next reset" fall out of this with no
+  // extra bookkeeping. In-memory only (a ref), so it doesn't survive a
+  // reload, matching the legacy app's snapshot lifetime.
+  lastResetSnapshot.value = realTests.map((t) => ({ id: t.id, status: t.status, note: t.note }))
+
+  bulkMarkBusy.value = true
+  try {
+    for (const t of realTests) {
+      const prevStatus = t.status
+      const prevNote = t.note
+      t.status = 'pending'
+      t.note = null
+      const [{ error: statusError }, { error: noteError }] = await Promise.all([
+        updateTestStatus(t.id, 'pending'),
+        updateTestNote(t.id, ''),
+      ])
+      if (statusError || noteError) {
+        t.status = prevStatus
+        t.note = prevNote
+        showToast((statusError || noteError).message || 'Could not reset one or more tests.')
+      }
+    }
+  } finally {
+    bulkMarkBusy.value = false
+  }
+
+  showToast('All test cases reset.', 6000, { label: 'Undo', onAction: undoReset })
+}
+
+// Restores every reset test's prior status+note via a fresh write-back to
+// Supabase (not just local state), since status/notes are shared/persisted
+// across devices and other users. A concurrent edit by someone else between
+// Reset and Undo is an accepted last-write-wins race — the same way every
+// other status/note edit in this app already behaves; no locking added.
+async function undoReset() {
+  const snapshot = lastResetSnapshot.value
+  if (!snapshot) return
+  lastResetSnapshot.value = null // consumed-once, so the toast button can't double-fire this
+
+  bulkMarkBusy.value = true
+  try {
+    for (const entry of snapshot) {
+      const t = findTest(entry.id)
+      if (!t) continue
+      t.status = entry.status
+      t.note = entry.note
+      const [{ error: statusError }, { error: noteError }] = await Promise.all([
+        updateTestStatus(entry.id, entry.status),
+        updateTestNote(entry.id, entry.note || ''),
+      ])
+      if (statusError || noteError) {
+        showToast((statusError || noteError).message || 'Could not fully undo the reset.')
+      }
+    }
+  } finally {
+    bulkMarkBusy.value = false
+  }
+}
+
+// ---------------------------------------------------------------------
 // Toast
 // ---------------------------------------------------------------------
 const toastMessage = ref('')
 const toastVisible = ref(false)
+const toastAction = ref(null)
+const toastTop = ref(20)
 let toastTimer = null
-function showToast(message) {
+
+// Template refs on .head-chrome/.head-metrics (bound in the template below)
+// — used to position the toast just below whatever header chrome is
+// actually visible right now, instead of a fixed offset.
+const headChromeEl = ref(null)
+const headMetricsEl = ref(null)
+
+// Ported from the legacy static app's showToast() (js/app.js, commit
+// c13ae12). .head-chrome is sticky-pinned so its bottom edge is always
+// where the title/actions row actually ends; .head-metrics isn't sticky,
+// so its bottom only matters while it's still scrolled into view — once
+// the page scrolls past it, its rect goes non-positive and chromeBottom
+// (always positive) wins instead. When no report has loaded yet
+// .head-metrics is absent (v-if="report"), giving 0 that never wins over
+// chromeBottom.
+function positionToast() {
+  const chromeBottom = headChromeEl.value?.getBoundingClientRect().bottom || 0
+  const metricsBottom = headMetricsEl.value?.getBoundingClientRect().bottom || 0
+  toastTop.value = Math.max(chromeBottom, metricsBottom) + 12
+}
+
+// `action`, when given, is { label, onAction } — shows a clickable action
+// button next to the message (e.g. Reset-all's "Undo") instead of the
+// plain text-only toast. Ported from the legacy showToast()'s 3rd arg
+// (js/app.js, commit 5048dc7).
+function showToast(message, duration = 3200, action = null) {
   toastMessage.value = message
+  toastAction.value = action
+  positionToast()
   toastVisible.value = true
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => {
     toastVisible.value = false
-  }, 3200)
+    toastAction.value = null
+  }, duration)
+}
+
+// Clicking the action button fires its handler then dismisses the toast
+// immediately, clearing the pending auto-dismiss timer so a stale handler
+// can't fire again after the toast is already gone (same guard the legacy
+// app had around toastActionHandler).
+function handleToastAction() {
+  const action = toastAction.value
+  if (!action) return
+  clearTimeout(toastTimer)
+  toastVisible.value = false
+  toastAction.value = null
+  action.onAction()
 }
 
 // ---------------------------------------------------------------------
@@ -557,7 +697,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="head-chrome" :class="{ 'nav-open': mobileNavOpen }">
+  <div ref="headChromeEl" class="head-chrome" :class="{ 'nav-open': mobileNavOpen }">
     <div class="head-inner">
       <div class="head-top">
         <div class="head-title-block">
@@ -615,6 +755,10 @@ onUnmounted(() => {
                 <Icon name="fileJson" cls="icon-sm" />
                 <span>Generate report</span>
               </button>
+              <button v-if="canEditTests" type="button" class="dropdown-item" @click="handleResetAll">
+                <Icon name="rotateCcw" cls="icon-sm" />
+                <span>Reset all</span>
+              </button>
               <template v-if="isOwner">
                 <div class="dropdown-divider"></div>
                 <button type="button" class="dropdown-item" @click="manageOpen = true; reportMenuOpen = false">
@@ -635,7 +779,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="report" class="head-metrics">
+      <div v-if="report" ref="headMetricsEl" class="head-metrics">
         <StatTiles :stats="statsView" :active-filter="currentFilter" @filter="handleFilterClick" />
         <ProgressBar :percent="statsView.pass_percent" :label="`${statsView.pass_percent}% passed`" />
 
@@ -888,7 +1032,10 @@ onUnmounted(() => {
 
   <BusyOverlay fixed :active="pdfBusy" label="Generating PDF…" />
 
-  <div class="toast" :class="{ show: toastVisible }">
+  <div class="toast" :class="{ show: toastVisible }" :style="{ top: toastTop + 'px' }">
     <span class="toast-msg">{{ toastMessage }}</span>
+    <button type="button" class="toast-action" :hidden="!toastAction" @click="handleToastAction">
+      {{ toastAction?.label }}
+    </button>
   </div>
 </template>
