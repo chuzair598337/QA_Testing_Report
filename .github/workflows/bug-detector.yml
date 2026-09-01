@@ -1,0 +1,69 @@
+name: Bug Detector
+
+# Diagnoses issues QA (or a human) labeled `bug`, classifies them as
+# needs-fix (code) or needs-ui (layout/style), and writes its reasoning to
+# agent-memory/bug-reports/ so Bug Fixer / UI Agent don't have to re-derive
+# it. Docs-only — commits straight to development, never touches app code.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: bug-detector-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    if: contains(github.event.issue.labels.*.name, 'bug')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: development
+
+      - name: Configure git identity
+        run: |
+          git config user.name "bug-detector[bot]"
+          git config user.email "bug-detector[bot]@users.noreply.github.com"
+
+      - name: Load role
+        id: role
+        run: |
+          {
+            echo 'content<<ROLE_EOF'
+            cat .claude/roles/bug-detector.md
+            echo 'ROLE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          track_progress: true
+          prompt: |
+            ${{ steps.role.outputs.content }}
+
+            ---
+            TASK
+
+            Repo: ${{ github.repository }}
+            Issue: #${{ github.event.issue.number }} — "${{ github.event.issue.title }}"
+
+            Issue body:
+            ${{ github.event.issue.body }}
+
+            You are checked out on `development` with git identity already
+            configured. Follow your role's steps 1-7 exactly: investigate,
+            classify, write `agent-memory/bug-reports/issue-${{ github.event.issue.number }}.md`,
+            commit + push it to `development`, relabel the issue
+            (`gh issue edit ${{ github.event.issue.number }} --remove-label bug --add-label agent-generated --add-label needs-fix`
+            or `--add-label needs-ui` instead of `needs-fix`), and leave a
+            summary comment.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(git*),Bash(gh issue*)"
+            --max-turns 25

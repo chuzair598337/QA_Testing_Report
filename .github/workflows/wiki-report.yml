@@ -1,0 +1,74 @@
+name: Wiki Report
+
+# Summarizes agent-memory/ + agent-generated issues/PRs into the repo wiki.
+# Read-only against application code — writes only to the wiki checkout.
+#
+# Requires the repo wiki to be enabled (Settings -> Features -> Wikis) and
+# initialized with at least one page, or the clone step below will fail.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday
+  workflow_dispatch: {}
+  push:
+    branches: [development]
+    paths:
+      - 'agent-memory/**'
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: wiki-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: development
+          path: repo
+
+      - name: Checkout wiki
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
+          cd wiki
+          git config user.name "wiki-report[bot]"
+          git config user.email "wiki-report[bot]@users.noreply.github.com"
+
+      - name: Load role
+        id: role
+        working-directory: repo
+        run: |
+          {
+            echo 'content<<ROLE_EOF'
+            cat .claude/roles/wiki-report.md
+            echo 'ROLE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            ${{ steps.role.outputs.content }}
+
+            ---
+            TASK
+
+            Repo: ${{ github.repository }}. The `development` checkout is at
+            `./repo` (read `./repo/agent-memory/**` from there). The wiki
+            checkout is at `./wiki`, git identity already configured there.
+
+            Follow your role's steps 1-4: read `agent-memory/`, cross-reference
+            with `gh issue list --label agent-generated --state all` and
+            `gh pr list --label agent-generated --state all`, write/update
+            `./wiki/Agent-Report.md`, then commit and push from inside
+            `./wiki` only. Do not modify anything under `./repo`.
+          claude_args: |
+            --allowedTools "Read,Write,Grep,Glob,Bash(git*),Bash(gh issue list*),Bash(gh pr list*),Bash(cd*)"
+            --max-turns 25

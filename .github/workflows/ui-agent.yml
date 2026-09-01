@@ -1,0 +1,72 @@
+name: UI Agent
+
+# Implements the fix for issues labeled needs-ui by Bug Detector. Works on
+# a branch off development, opens a PR back into development labeled
+# needs-approval — a human merges it. Never pushes to staging/production.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ui-agent-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    if: contains(github.event.issue.labels.*.name, 'needs-ui')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: development
+
+      - name: Create fix branch
+        run: |
+          git config user.name "ui-agent[bot]"
+          git config user.email "ui-agent[bot]@users.noreply.github.com"
+          git checkout -b agent/ui-issue-${{ github.event.issue.number }}
+
+      - name: Load role
+        id: role
+        run: |
+          {
+            echo 'content<<ROLE_EOF'
+            cat .claude/roles/ui-agent.md
+            echo 'ROLE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          track_progress: true
+          prompt: |
+            ${{ steps.role.outputs.content }}
+
+            ---
+            TASK
+
+            Repo: ${{ github.repository }}
+            Issue: #${{ github.event.issue.number }} — "${{ github.event.issue.title }}"
+            Bug Detector's report:
+            `agent-memory/bug-reports/issue-${{ github.event.issue.number }}.md`
+            (read it before doing anything else).
+
+            You're on branch `agent/ui-issue-${{ github.event.issue.number }}`,
+            branched from `development`, git identity already configured.
+            Follow your role's steps 1-7: fix the visual/layout issue under
+            `app/`, verify `npm run lint` and `npm run build` pass from
+            `app/`, write `agent-memory/ui-fixes/issue-${{ github.event.issue.number }}.md`,
+            commit, push the branch, open a PR into `development` with
+            `Fixes #${{ github.event.issue.number }}` in the body, label the
+            PR `needs-approval` and `agent-generated`, and comment on the
+            issue linking the PR.
+          claude_args: |
+            --allowedTools "Read,Edit,Write,Grep,Glob,Bash(git*),Bash(gh pr*),Bash(gh issue comment*),Bash(npm*),Bash(cd*)"
+            --max-turns 50
