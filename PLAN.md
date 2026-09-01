@@ -4,6 +4,46 @@ Implements `autonomous-bot-team-setup-guide.md`, Parts 2–3 and 5–10. Branch
 protection (Part 4) is explicitly yours to configure in the GitHub UI —
 nothing here touches it.
 
+## Part 12 (test end to end) — status
+
+- **QA Agent: verified live**, real bug found and fixed. First run of
+  `qa.yml` failed for real (not a setup issue) — the CI build had no
+  Supabase credentials, so the router's `getSession()` call never got a
+  working client and `/dashboard` didn't redirect to `/login`. Filed
+  `bug`+`agent-generated` issue #5 automatically, exactly as designed.
+  Root-caused it, added `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` repo
+  secrets (staging-dev Supabase project `gqkfgisaqmxlklybrath`, pulled via
+  the Supabase connector — not prod), wired them into `qa.yml` /
+  `bug-fixer.yml` / `ui-agent.yml`'s build steps. Re-ran: green.
+- **Also found and fixed**: `wiki-report.yml`'s Slack step used
+  `if: secrets.SLACK_WEBHOOK_URL != ''` — GitHub Actions rejects
+  referencing `secrets.*` directly in a step `if:` (fails workflow
+  parsing). Every run of that workflow was erroring before any job even
+  started. Moved the check into the shell script instead.
+- **Bug Detector / Bug Fixer / UI Agent: can't be live-tested yet — GitHub
+  platform constraint, not a bug in this pipeline.** `issues`-triggered
+  workflows only fire for a workflow file that exists on the repo's
+  *default* branch (`main`). I initially added a `workflow_dispatch`
+  fallback assuming that would sidestep it — it doesn't: GitHub also
+  refuses to dispatch a workflow by name/ID until that file has been
+  registered from `main` at least once (`404: workflow ... not found on
+  the default branch`, confirmed empirically). So none of the three
+  label-triggered agents can run — via label *or* manual dispatch — until
+  this pipeline reaches `main` through your normal
+  `development` → `staging` → `main` flow. The `workflow_dispatch` inputs
+  are still there and still useful — they just start working once merged
+  that far, not before.
+- **Wiki & Report Agent**: same constraint for its `schedule` trigger;
+  `workflow_dispatch` on it hit the same 404 pre-merge for the same reason.
+- **Staging smoke test**: untested — needs a push to `staging`, which only
+  makes sense after this PR is merged and promoted there.
+
+Practical read: steps 1-2 of Part 12 are done and green. Steps 3-6 need
+this PR merged into `development` and then promoted through your normal
+flow before they're reachable at all — that's not extra scope I'm adding,
+it's how GitHub Actions' `issues`/`schedule`/`workflow_dispatch` triggers
+work everywhere, independent of this guide's branch philosophy.
+
 ## Investigation findings (Step 1)
 
 - **Test framework**: none existed. Added — see "Playwright bootstrap" below.

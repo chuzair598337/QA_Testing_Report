@@ -4,11 +4,13 @@ name: Bug Detector Agent
 # only — it cannot edit files or run bash, since it's the agent with the
 # least oversight before its output routes the rest of the pipeline.
 #
-# workflow_dispatch is a manual test escape hatch: `issues`-triggered runs
-# only fire for workflow files present on the repo's *default* branch
-# (main), so until this pipeline is promoted there, `labeled` alone can't
-# be exercised. Dispatch manually against any issue number in the meantime:
-#   gh workflow run bug-detector.yml --ref <branch> -f issue_number=<n>
+# workflow_dispatch is a manual test/re-run escape hatch. Note: GitHub only
+# lets you dispatch a workflow (by filename or ID) once that file exists on
+# the repo's *default* branch (main) — this applies to workflow_dispatch
+# itself, not just `issues`/`schedule`. Until this pipeline is promoted to
+# main, neither `labeled` nor manual dispatch can reach it; both work once
+# it's there:
+#   gh workflow run bug-detector.yml --ref <any-branch> -f issue_number=<n>
 
 on:
   issues:
