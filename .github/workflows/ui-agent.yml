@@ -1,17 +1,19 @@
 name: UI Agent
 
-# Implements the fix for issues labeled needs-ui by Bug Detector. Works on
-# a branch off development, opens a PR back into development labeled
-# needs-approval — a human merges it. Never pushes to staging/production.
+# Same shape as Bug Fixer, triggered on needs-ui. Tools scoped to this
+# repo's actual styling/component paths (app/src/styles, app/src/components,
+# app/src/views — Vue SFCs mix template/script/style in one file, so the
+# role prompt is what enforces "styling only" within a component; the glob
+# scope keeps it out of everything else: stores, composables, router, lib).
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
 
 permissions:
   contents: write
-  issues: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: ui-agent-${{ github.event.issue.number }}
@@ -19,54 +21,63 @@ concurrency:
 
 jobs:
   fix:
-    if: contains(github.event.issue.labels.*.name, 'needs-ui')
+    if: github.event.label.name == 'needs-ui'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
         with:
           ref: development
+          fetch-depth: 0
 
-      - name: Create fix branch
-        run: |
-          git config user.name "ui-agent[bot]"
-          git config user.email "ui-agent[bot]@users.noreply.github.com"
-          git checkout -b agent/ui-issue-${{ github.event.issue.number }}
-
-      - name: Load role
-        id: role
-        run: |
-          {
-            echo 'content<<ROLE_EOF'
-            cat .claude/roles/ui-agent.md
-            echo 'ROLE_EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-node@v4
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          track_progress: true
-          prompt: |
-            ${{ steps.role.outputs.content }}
+          node-version: '24.x'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
 
-            ---
-            TASK
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
 
-            Repo: ${{ github.repository }}
-            Issue: #${{ github.event.issue.number }} — "${{ github.event.issue.title }}"
-            Bug Detector's report:
-            `agent-memory/bug-reports/issue-${{ github.event.issue.number }}.md`
-            (read it before doing anything else).
+      - run: npm install -g @anthropic-ai/claude-code@latest
 
-            You're on branch `agent/ui-issue-${{ github.event.issue.number }}`,
-            branched from `development`, git identity already configured.
-            Follow your role's steps 1-7: fix the visual/layout issue under
-            `app/`, verify `npm run lint` and `npm run build` pass from
-            `app/`, write `agent-memory/ui-fixes/issue-${{ github.event.issue.number }}.md`,
-            commit, push the branch, open a PR into `development` with
-            `Fixes #${{ github.event.issue.number }}` in the body, label the
-            PR `needs-approval` and `agent-generated`, and comment on the
-            issue linking the PR.
-          claude_args: |
-            --allowedTools "Read,Edit,Write,Grep,Glob,Bash(git*),Bash(gh pr*),Bash(gh issue comment*),Bash(npm*),Bash(cd*)"
-            --max-turns 50
+      - run: git checkout -b ui/issue-${{ github.event.issue.number }}
+
+      - name: Run UI Agent
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          PROMPT="$(cat .claude/roles/ui-agent.md)
+
+          Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+          ${{ github.event.issue.body }}"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Edit(src/styles/**),Edit(src/components/**),Edit(src/views/**),Write(src/styles/**),Bash(npm run lint:*),Bash(npm run build:*),Bash(npx playwright test:*),Bash(git:*)" \
+            --max-turns 25 \
+            --output-format json > result.json
+
+      - name: Push branch (if Claude committed anything)
+        run: |
+          git config user.name "ui-agent"
+          git config user.email "agent@noreply.local"
+          if [ -n "$(git log development..HEAD 2>/dev/null)" ]; then
+            git push origin ui/issue-${{ github.event.issue.number }}
+            echo "PUSHED=true" >> "$GITHUB_ENV"
+          else
+            echo "No commits on the ui branch — UI Agent likely stopped and commented instead (e.g. needed Bug Fixer). Skipping PR."
+            echo "PUSHED=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Open PR
+        if: env.PUSHED == 'true'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create --title "UI fix: issue #${{ github.event.issue.number }}" \
+            --body "Auto-generated UI/layout fix. See #${{ github.event.issue.number }} for context." \
+            --label "needs-approval,agent-generated" \
+            --base development \
+            --head ui/issue-${{ github.event.issue.number }}

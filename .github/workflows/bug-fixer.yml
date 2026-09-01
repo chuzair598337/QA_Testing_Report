@@ -1,17 +1,18 @@
-name: Bug Fixer
+name: Bug Fixer Agent
 
-# Implements the fix for issues labeled needs-fix by Bug Detector. Works on
-# a branch off development, opens a PR back into development labeled
-# needs-approval — a human merges it. Never pushes to staging/production.
+# Single headless `claude -p` call. Branches from development, patches,
+# adds/updates a regression test, opens a PR back into development.
+# Never merges, never pushes to development directly, never touches
+# staging/production.
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
 
 permissions:
   contents: write
-  issues: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: bug-fixer-${{ github.event.issue.number }}
@@ -19,54 +20,63 @@ concurrency:
 
 jobs:
   fix:
-    if: contains(github.event.issue.labels.*.name, 'needs-fix')
+    if: github.event.label.name == 'needs-fix'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
         with:
           ref: development
+          fetch-depth: 0
 
-      - name: Create fix branch
-        run: |
-          git config user.name "bug-fixer[bot]"
-          git config user.email "bug-fixer[bot]@users.noreply.github.com"
-          git checkout -b agent/fix-issue-${{ github.event.issue.number }}
-
-      - name: Load role
-        id: role
-        run: |
-          {
-            echo 'content<<ROLE_EOF'
-            cat .claude/roles/bug-fixer.md
-            echo 'ROLE_EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-node@v4
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          track_progress: true
-          prompt: |
-            ${{ steps.role.outputs.content }}
+          node-version: '24.x'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
 
-            ---
-            TASK
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
 
-            Repo: ${{ github.repository }}
-            Issue: #${{ github.event.issue.number }} — "${{ github.event.issue.title }}"
-            Bug Detector's report:
-            `agent-memory/bug-reports/issue-${{ github.event.issue.number }}.md`
-            (read it before doing anything else).
+      - run: npm install -g @anthropic-ai/claude-code@latest
 
-            You're on branch `agent/fix-issue-${{ github.event.issue.number }}`,
-            branched from `development`, git identity already configured.
-            Follow your role's steps 1-7: implement the fix under `app/`,
-            verify `npm run lint` and `npm run build` pass from `app/`,
-            write `agent-memory/fixes/issue-${{ github.event.issue.number }}.md`,
-            commit, push the branch, open a PR into `development` with
-            `Fixes #${{ github.event.issue.number }}` in the body, label the
-            PR `needs-approval` and `agent-generated`, and comment on the
-            issue linking the PR.
-          claude_args: |
-            --allowedTools "Read,Edit,Write,Grep,Glob,Bash(git*),Bash(gh pr*),Bash(gh issue comment*),Bash(npm*),Bash(cd*)"
-            --max-turns 50
+      - run: git checkout -b fix/issue-${{ github.event.issue.number }}
+
+      - name: Run Bug Fixer
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          PROMPT="$(cat .claude/roles/bug-fixer.md)
+
+          Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+          ${{ github.event.issue.body }}"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Edit,Write,Bash(npm run lint:*),Bash(npm run build:*),Bash(npx playwright test:*),Bash(git:*)" \
+            --max-turns 25 \
+            --output-format json > result.json
+
+      - name: Push branch (if Claude committed anything)
+        run: |
+          git config user.name "bug-fixer-agent"
+          git config user.email "agent@noreply.local"
+          if [ -n "$(git log development..HEAD 2>/dev/null)" ]; then
+            git push origin fix/issue-${{ github.event.issue.number }}
+            echo "PUSHED=true" >> "$GITHUB_ENV"
+          else
+            echo "No commits on the fix branch — Bug Fixer likely stopped and commented instead. Skipping PR."
+            echo "PUSHED=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Open PR
+        if: env.PUSHED == 'true'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create --title "Fix: issue #${{ github.event.issue.number }}" \
+            --body "Auto-generated fix. See #${{ github.event.issue.number }} for context." \
+            --label "needs-approval,agent-generated" \
+            --base development \
+            --head fix/issue-${{ github.event.issue.number }}

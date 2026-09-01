@@ -1,74 +1,67 @@
-name: Wiki Report
+name: Wiki & Report Agent
 
-# Summarizes agent-memory/ + agent-generated issues/PRs into the repo wiki.
-# Read-only against application code — writes only to the wiki checkout.
-#
-# Requires the repo wiki to be enabled (Settings -> Features -> Wikis) and
-# initialized with at least one page, or the clone step below will fail.
+# Daily. Single headless `claude -p` call, summarizes the last 24h of
+# closed issues + merged PRs, updates the wiki, posts to Slack. Requires
+# the repo wiki to be enabled + initialized with one page (Settings ->
+# Features -> Wikis), or the clone step below fails.
 
 on:
   schedule:
-    - cron: '0 6 * * 1' # weekly, Monday
+    - cron: '0 9 * * *' # daily, 9am UTC
   workflow_dispatch: {}
-  push:
-    branches: [development]
-    paths:
-      - 'agent-memory/**'
 
 permissions:
-  contents: write
+  contents: write # write is for the wiki push (a separate git repo), not this one
   issues: read
   pull-requests: read
-
-concurrency:
-  group: wiki-report
-  cancel-in-progress: true
 
 jobs:
   report:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: development
-          path: repo
 
-      - name: Checkout wiki
+      - run: npm install -g @anthropic-ai/claude-code@latest
+
+      - name: Gather yesterday's activity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue list --state closed --search "closed:>=$(date -d '1 day ago' +%Y-%m-%d)" --json number,title,closedAt,labels > closed_issues.json
+          gh pr list --state merged --search "merged:>=$(date -d '1 day ago' +%Y-%m-%d)" --json number,title,mergedAt > merged_prs.json
+
+      - name: Clone wiki
         run: |
           git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
-          cd wiki
-          git config user.name "wiki-report[bot]"
-          git config user.email "wiki-report[bot]@users.noreply.github.com"
+          git -C wiki config user.name "wiki-report-agent"
+          git -C wiki config user.email "agent@noreply.local"
 
-      - name: Load role
-        id: role
-        working-directory: repo
+      - name: Run Wiki Agent
+        working-directory: wiki
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          {
-            echo 'content<<ROLE_EOF'
-            cat .claude/roles/wiki-report.md
-            echo 'ROLE_EOF'
-          } >> "$GITHUB_OUTPUT"
+          PROMPT="$(cat ../.claude/roles/wiki-report.md)
 
-      - uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            ${{ steps.role.outputs.content }}
+          You're already in the wiki git checkout (cwd) — edit or create
+          Bug-Resolution-History.md here, then \`git add\`, \`git commit\`,
+          and \`git push\` it yourself before finishing.
 
-            ---
-            TASK
+          Closed issues: $(cat ../closed_issues.json)
+          Merged PRs: $(cat ../merged_prs.json)"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Edit,Write,Bash(git:*)" \
+            --max-turns 10 \
+            --output-format json > ../report.json
 
-            Repo: ${{ github.repository }}. The `development` checkout is at
-            `./repo` (read `./repo/agent-memory/**` from there). The wiki
-            checkout is at `./wiki`, git identity already configured there.
+      - name: Post to Slack
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          MSG=$(jq -r '.result' report.json)
+          curl -sf -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": $(jq -Rs . <<< "$MSG")}" \
+            "${{ secrets.SLACK_WEBHOOK_URL }}"
 
-            Follow your role's steps 1-4: read `agent-memory/`, cross-reference
-            with `gh issue list --label agent-generated --state all` and
-            `gh pr list --label agent-generated --state all`, write/update
-            `./wiki/Agent-Report.md`, then commit and push from inside
-            `./wiki` only. Do not modify anything under `./repo`.
-          claude_args: |
-            --allowedTools "Read,Write,Grep,Glob,Bash(git*),Bash(gh issue list*),Bash(gh pr list*),Bash(cd*)"
-            --max-turns 25
+      - name: Skip notice
+        if: ${{ secrets.SLACK_WEBHOOK_URL == '' }}
+        run: echo "SLACK_WEBHOOK_URL not set — skipping Slack post. Wiki was still updated."

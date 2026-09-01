@@ -1,16 +1,15 @@
-name: Bug Detector
+name: Bug Detector Agent
 
-# Diagnoses issues QA (or a human) labeled `bug`, classifies them as
-# needs-fix (code) or needs-ui (layout/style), and writes its reasoning to
-# agent-memory/bug-reports/ so Bug Fixer / UI Agent don't have to re-derive
-# it. Docs-only — commits straight to development, never touches app code.
+# Read-only investigation. Single headless `claude -p` call, Read/Grep/Glob
+# only — it cannot edit files or run bash, since it's the agent with the
+# least oversight before its output routes the rest of the pipeline.
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
 
 permissions:
-  contents: write
+  contents: write # only for the deterministic agent-memory commit below
   issues: write
 
 concurrency:
@@ -19,51 +18,56 @@ concurrency:
 
 jobs:
   detect:
-    if: contains(github.event.issue.labels.*.name, 'bug')
+    if: github.event.label.name == 'bug'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: development
 
-      - name: Configure git identity
-        run: |
-          git config user.name "bug-detector[bot]"
-          git config user.email "bug-detector[bot]@users.noreply.github.com"
+      - run: npm install -g @anthropic-ai/claude-code@latest
 
-      - name: Load role
-        id: role
+      - name: Run Bug Detector
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          {
-            echo 'content<<ROLE_EOF'
-            cat .claude/roles/bug-detector.md
-            echo 'ROLE_EOF'
-          } >> "$GITHUB_OUTPUT"
+          PROMPT="$(cat .claude/roles/bug-detector.md)
 
-      - uses: anthropics/claude-code-action@v1
+          Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+          ${{ github.event.issue.body }}"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Grep,Glob" \
+            --max-turns 6 \
+            --output-format json > result.json
+
+      - name: Post comment, route, and record to agent-memory
+        uses: actions/github-script@v7
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          track_progress: true
-          prompt: |
-            ${{ steps.role.outputs.content }}
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
 
-            ---
-            TASK
+            const result = JSON.parse(fs.readFileSync('result.json', 'utf8'));
+            const body = result.result;
+            const issueNumber = context.issue.number;
 
-            Repo: ${{ github.repository }}
-            Issue: #${{ github.event.issue.number }} — "${{ github.event.issue.title }}"
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issueNumber, body,
+            });
 
-            Issue body:
-            ${{ github.event.issue.body }}
+            const label = body.includes('ROUTE: needs-ui') ? 'needs-ui' : 'needs-fix';
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issueNumber, labels: [label],
+            });
 
-            You are checked out on `development` with git identity already
-            configured. Follow your role's steps 1-7 exactly: investigate,
-            classify, write `agent-memory/bug-reports/issue-${{ github.event.issue.number }}.md`,
-            commit + push it to `development`, relabel the issue
-            (`gh issue edit ${{ github.event.issue.number }} --remove-label bug --add-label agent-generated --add-label needs-fix`
-            or `--add-label needs-ui` instead of `needs-fix`), and leave a
-            summary comment.
-          claude_args: |
-            --allowedTools "Read,Grep,Glob,Bash(git*),Bash(gh issue*)"
-            --max-turns 25
+            // Deterministic, docs-only — not authored by Claude, so this
+            // doesn't cost the read-only agent any tool access.
+            fs.mkdirSync('agent-memory/bug-reports', { recursive: true });
+            fs.writeFileSync(`agent-memory/bug-reports/issue-${issueNumber}.md`, body + '\n');
+            execSync('git config user.name "bug-detector-agent"');
+            execSync('git config user.email "agent@noreply.local"');
+            execSync(`git add agent-memory/bug-reports/issue-${issueNumber}.md`);
+            execSync(`git commit -m "chore(agent-memory): bug-detector report for #${issueNumber}"`);
+            execSync('git push origin development');
