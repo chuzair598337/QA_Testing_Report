@@ -3,22 +3,34 @@ name: Bug Detector Agent
 # Read-only investigation. Single headless `claude -p` call, Read/Grep/Glob
 # only — it cannot edit files or run bash, since it's the agent with the
 # least oversight before its output routes the rest of the pipeline.
+#
+# workflow_dispatch is a manual test escape hatch: `issues`-triggered runs
+# only fire for workflow files present on the repo's *default* branch
+# (main), so until this pipeline is promoted there, `labeled` alone can't
+# be exercised. Dispatch manually against any issue number in the meantime:
+#   gh workflow run bug-detector.yml --ref <branch> -f issue_number=<n>
 
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to run against (manual test trigger)
+        required: true
+        type: number
 
 permissions:
   contents: write # only for the deterministic agent-memory commit below
   issues: write
 
 concurrency:
-  group: bug-detector-${{ github.event.issue.number }}
+  group: bug-detector-${{ github.event.issue.number || github.event.inputs.issue_number }}
   cancel-in-progress: true
 
 jobs:
   detect:
-    if: github.event.label.name == 'bug'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'bug'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,14 +39,24 @@ jobs:
 
       - run: npm install -g @anthropic-ai/claude-code@latest
 
+      - name: Resolve issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NUM="${{ github.event.inputs.issue_number || github.event.issue.number }}"
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+          { echo 'title<<TITLE_EOF'; gh issue view "$NUM" --json title -q .title; echo 'TITLE_EOF'; } >> "$GITHUB_OUTPUT"
+          { echo 'body<<BODY_EOF'; gh issue view "$NUM" --json body -q .body; echo 'BODY_EOF'; } >> "$GITHUB_OUTPUT"
+
       - name: Run Bug Detector
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           PROMPT="$(cat .claude/roles/bug-detector.md)
 
-          Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
-          ${{ github.event.issue.body }}"
+          Issue #${{ steps.issue.outputs.number }}: ${{ steps.issue.outputs.title }}
+          ${{ steps.issue.outputs.body }}"
           claude -p "$PROMPT" \
             --allowedTools "Read,Grep,Glob" \
             --max-turns 6 \
@@ -49,7 +71,7 @@ jobs:
 
             const result = JSON.parse(fs.readFileSync('result.json', 'utf8'));
             const body = result.result;
-            const issueNumber = context.issue.number;
+            const issueNumber = ${{ steps.issue.outputs.number }};
 
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,

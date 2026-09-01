@@ -5,10 +5,22 @@ name: UI Agent
 # app/src/views — Vue SFCs mix template/script/style in one file, so the
 # role prompt is what enforces "styling only" within a component; the glob
 # scope keeps it out of everything else: stores, composables, router, lib).
+#
+# workflow_dispatch is a manual test escape hatch: `issues`-triggered runs
+# only fire for workflow files present on the repo's *default* branch
+# (main), so until this pipeline is promoted there, `labeled` alone can't
+# be exercised. Dispatch manually against any issue number in the meantime:
+#   gh workflow run ui-agent.yml --ref <branch> -f issue_number=<n>
 
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to run against (manual test trigger)
+        required: true
+        type: number
 
 permissions:
   contents: write
@@ -16,12 +28,12 @@ permissions:
   issues: write
 
 concurrency:
-  group: ui-agent-${{ github.event.issue.number }}
+  group: ui-agent-${{ github.event.issue.number || github.event.inputs.issue_number }}
   cancel-in-progress: true
 
 jobs:
   fix:
-    if: github.event.label.name == 'needs-ui'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'needs-ui'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -38,21 +50,35 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
+      - name: Resolve issue
+        id: issue
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NUM="${{ github.event.inputs.issue_number || github.event.issue.number }}"
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+          { echo 'title<<TITLE_EOF'; gh issue view "$NUM" --json title -q .title; echo 'TITLE_EOF'; } >> "$GITHUB_OUTPUT"
+          { echo 'body<<BODY_EOF'; gh issue view "$NUM" --json body -q .body; echo 'BODY_EOF'; } >> "$GITHUB_OUTPUT"
+
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
       - run: npm install -g @anthropic-ai/claude-code@latest
 
-      - run: git checkout -b ui/issue-${{ github.event.issue.number }}
+      - run: git checkout -b ui/issue-${{ steps.issue.outputs.number }}
 
       - name: Run UI Agent
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # inherited by any npm run build / npx playwright test Claude runs
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           PROMPT="$(cat .claude/roles/ui-agent.md)
 
-          Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
-          ${{ github.event.issue.body }}"
+          Issue #${{ steps.issue.outputs.number }}: ${{ steps.issue.outputs.title }}
+          ${{ steps.issue.outputs.body }}"
           claude -p "$PROMPT" \
             --allowedTools "Read,Edit(src/styles/**),Edit(src/components/**),Edit(src/views/**),Write(src/styles/**),Bash(npm run lint:*),Bash(npm run build:*),Bash(npx playwright test:*),Bash(git:*)" \
             --max-turns 25 \
@@ -63,7 +89,7 @@ jobs:
           git config user.name "ui-agent"
           git config user.email "agent@noreply.local"
           if [ -n "$(git log development..HEAD 2>/dev/null)" ]; then
-            git push origin ui/issue-${{ github.event.issue.number }}
+            git push origin ui/issue-${{ steps.issue.outputs.number }}
             echo "PUSHED=true" >> "$GITHUB_ENV"
           else
             echo "No commits on the ui branch — UI Agent likely stopped and commented instead (e.g. needed Bug Fixer). Skipping PR."
@@ -76,8 +102,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr create --title "UI fix: issue #${{ github.event.issue.number }}" \
-            --body "Auto-generated UI/layout fix. See #${{ github.event.issue.number }} for context." \
+          gh pr create --title "UI fix: issue #${{ steps.issue.outputs.number }}" \
+            --body "Auto-generated UI/layout fix. See #${{ steps.issue.outputs.number }} for context." \
             --label "needs-approval,agent-generated" \
             --base development \
-            --head ui/issue-${{ github.event.issue.number }}
+            --head ui/issue-${{ steps.issue.outputs.number }}

@@ -43,6 +43,12 @@ jobs:
 
       - name: Run tests
         id: tests
+        env:
+          # playwright.config.ts's webServer runs `npm run build && preview`
+          # as a child process, which needs these at build time to produce
+          # a working Supabase client (staging-dev project, not prod).
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npx playwright test
         continue-on-error: true
 

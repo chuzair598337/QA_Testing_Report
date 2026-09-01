@@ -4,10 +4,22 @@ name: Bug Fixer Agent
 # adds/updates a regression test, opens a PR back into development.
 # Never merges, never pushes to development directly, never touches
 # staging/production.
+#
+# workflow_dispatch is a manual test escape hatch: `issues`-triggered runs
+# only fire for workflow files present on the repo's *default* branch
+# (main), so until this pipeline is promoted there, `labeled` alone can't
+# be exercised. Dispatch manually against any issue number in the meantime:
+#   gh workflow run bug-fixer.yml --ref <branch> -f issue_number=<n>
 
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to run against (manual test trigger)
+        required: true
+        type: number
 
 permissions:
   contents: write
@@ -15,12 +27,12 @@ permissions:
   issues: write
 
 concurrency:
-  group: bug-fixer-${{ github.event.issue.number }}
+  group: bug-fixer-${{ github.event.issue.number || github.event.inputs.issue_number }}
   cancel-in-progress: true
 
 jobs:
   fix:
-    if: github.event.label.name == 'needs-fix'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'needs-fix'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,21 +49,35 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
+      - name: Resolve issue
+        id: issue
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NUM="${{ github.event.inputs.issue_number || github.event.issue.number }}"
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+          { echo 'title<<TITLE_EOF'; gh issue view "$NUM" --json title -q .title; echo 'TITLE_EOF'; } >> "$GITHUB_OUTPUT"
+          { echo 'body<<BODY_EOF'; gh issue view "$NUM" --json body -q .body; echo 'BODY_EOF'; } >> "$GITHUB_OUTPUT"
+
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
       - run: npm install -g @anthropic-ai/claude-code@latest
 
-      - run: git checkout -b fix/issue-${{ github.event.issue.number }}
+      - run: git checkout -b fix/issue-${{ steps.issue.outputs.number }}
 
       - name: Run Bug Fixer
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # inherited by any npm run build / npx playwright test Claude runs
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           PROMPT="$(cat .claude/roles/bug-fixer.md)
 
-          Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
-          ${{ github.event.issue.body }}"
+          Issue #${{ steps.issue.outputs.number }}: ${{ steps.issue.outputs.title }}
+          ${{ steps.issue.outputs.body }}"
           claude -p "$PROMPT" \
             --allowedTools "Read,Edit,Write,Bash(npm run lint:*),Bash(npm run build:*),Bash(npx playwright test:*),Bash(git:*)" \
             --max-turns 25 \
@@ -62,7 +88,7 @@ jobs:
           git config user.name "bug-fixer-agent"
           git config user.email "agent@noreply.local"
           if [ -n "$(git log development..HEAD 2>/dev/null)" ]; then
-            git push origin fix/issue-${{ github.event.issue.number }}
+            git push origin fix/issue-${{ steps.issue.outputs.number }}
             echo "PUSHED=true" >> "$GITHUB_ENV"
           else
             echo "No commits on the fix branch — Bug Fixer likely stopped and commented instead. Skipping PR."
@@ -75,8 +101,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr create --title "Fix: issue #${{ github.event.issue.number }}" \
-            --body "Auto-generated fix. See #${{ github.event.issue.number }} for context." \
+          gh pr create --title "Fix: issue #${{ steps.issue.outputs.number }}" \
+            --body "Auto-generated fix. See #${{ steps.issue.outputs.number }} for context." \
             --label "needs-approval,agent-generated" \
             --base development \
-            --head fix/issue-${{ github.event.issue.number }}
+            --head fix/issue-${{ steps.issue.outputs.number }}

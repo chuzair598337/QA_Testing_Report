@@ -55,13 +55,16 @@ jobs:
             --output-format json > ../report.json
 
       - name: Post to Slack
-        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          # `secrets.*` can't be referenced directly in an `if:` expression
+          # (fails workflow parsing) — guard inside the shell instead.
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set — skipping Slack post. Wiki was still updated."
+            exit 0
+          fi
           MSG=$(jq -r '.result' report.json)
           curl -sf -X POST -H 'Content-type: application/json' \
             --data "{\"text\": $(jq -Rs . <<< "$MSG")}" \
-            "${{ secrets.SLACK_WEBHOOK_URL }}"
-
-      - name: Skip notice
-        if: ${{ secrets.SLACK_WEBHOOK_URL == '' }}
-        run: echo "SLACK_WEBHOOK_URL not set — skipping Slack post. Wiki was still updated."
+            "$SLACK_WEBHOOK_URL"
