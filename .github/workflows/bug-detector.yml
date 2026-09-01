@@ -1,0 +1,97 @@
+name: Bug Detector Agent
+
+# Read-only investigation. Single headless `claude -p` call, Read/Grep/Glob
+# only — it cannot edit files or run bash, since it's the agent with the
+# least oversight before its output routes the rest of the pipeline.
+#
+# workflow_dispatch is a manual test/re-run escape hatch. Note: GitHub only
+# lets you dispatch a workflow (by filename or ID) once that file exists on
+# the repo's *default* branch (main) — this applies to workflow_dispatch
+# itself, not just `issues`/`schedule`. Until this pipeline is promoted to
+# main, neither `labeled` nor manual dispatch can reach it; both work once
+# it's there:
+#   gh workflow run bug-detector.yml --ref <any-branch> -f issue_number=<n>
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to run against (manual test trigger)
+        required: true
+        type: number
+
+permissions:
+  contents: write # only for the deterministic agent-memory commit below
+  issues: write
+
+concurrency:
+  group: bug-detector-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'bug'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: development
+
+      - run: npm install -g @anthropic-ai/claude-code@latest
+
+      - name: Resolve issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NUM="${{ github.event.inputs.issue_number || github.event.issue.number }}"
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+          { echo 'title<<TITLE_EOF'; gh issue view "$NUM" --json title -q .title; echo 'TITLE_EOF'; } >> "$GITHUB_OUTPUT"
+          { echo 'body<<BODY_EOF'; gh issue view "$NUM" --json body -q .body; echo 'BODY_EOF'; } >> "$GITHUB_OUTPUT"
+
+      - name: Run Bug Detector
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          PROMPT="$(cat .claude/roles/bug-detector.md)
+
+          Issue #${{ steps.issue.outputs.number }}: ${{ steps.issue.outputs.title }}
+          ${{ steps.issue.outputs.body }}"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Grep,Glob" \
+            --max-turns 6 \
+            --output-format json > result.json
+
+      - name: Post comment, route, and record to agent-memory
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            const result = JSON.parse(fs.readFileSync('result.json', 'utf8'));
+            const body = result.result;
+            const issueNumber = ${{ steps.issue.outputs.number }};
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issueNumber, body,
+            });
+
+            const label = body.includes('ROUTE: needs-ui') ? 'needs-ui' : 'needs-fix';
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issueNumber, labels: [label],
+            });
+
+            // Deterministic, docs-only — not authored by Claude, so this
+            // doesn't cost the read-only agent any tool access.
+            fs.mkdirSync('agent-memory/bug-reports', { recursive: true });
+            fs.writeFileSync(`agent-memory/bug-reports/issue-${issueNumber}.md`, body + '\n');
+            execSync('git config user.name "bug-detector-agent"');
+            execSync('git config user.email "agent@noreply.local"');
+            execSync(`git add agent-memory/bug-reports/issue-${issueNumber}.md`);
+            execSync(`git commit -m "chore(agent-memory): bug-detector report for #${issueNumber}"`);
+            execSync('git push origin development');

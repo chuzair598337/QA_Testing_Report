@@ -3,7 +3,7 @@
 // mini pass/fail bar) + its sub-module cards. Ported visually/behaviorally
 // from js/app.js's render() module block (~line 574) and buildMenuWrap()
 // (~line 276, pin/lock + bulk-mark dropdown).
-import { inject, computed } from 'vue'
+import { inject, computed, ref, watch, nextTick } from 'vue'
 import Icon from './icons/Icon.vue'
 import SubModuleCard from './SubModuleCard.vue'
 
@@ -31,6 +31,27 @@ const menuKey = computed(() => `mod-${props.mod.id}`)
 const menuOpen = computed(() => treeUi.openMenuKey.value === menuKey.value)
 const allTests = computed(() => props.mod.subModules.flatMap((sm) => sm.tests))
 const bulkDisabled = computed(() => locked.value || allTests.value.length === 0 || !canEdit.value)
+
+// .module has overflow:hidden (for its rounded corners), which clips this
+// absolutely-positioned dropdown whenever a later sibling module card
+// paints over the clipped remainder — teleporting to <body> + position:
+// fixed (see .dropdown-menu--floating in base.css) escapes that entirely,
+// so the menu always renders on top regardless of collapse state or
+// scroll position. Position is computed from the trigger button's own
+// rect — viewport-relative, matching position:fixed's coordinate space
+// directly, no scroll-offset math needed.
+const triggerRef = ref(null)
+const menuStyle = ref({})
+watch(menuOpen, async (isOpen) => {
+  if (!isOpen) return
+  await nextTick()
+  const rect = triggerRef.value?.getBoundingClientRect()
+  if (!rect) return
+  menuStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    right: `${window.innerWidth - rect.right}px`,
+  }
+})
 
 function toggleMenu(e) {
   e.stopPropagation()
@@ -70,6 +91,7 @@ function pct(count, total) {
       <div class="module-meta" @click.stop>
         <div class="menu-wrap">
           <button
+            ref="triggerRef"
             type="button"
             class="icon-btn"
             :class="{ 'active-state': pinned || locked }"
@@ -80,26 +102,33 @@ function pct(count, total) {
           >
             <Icon name="ellipsisVertical" />
           </button>
-          <div class="dropdown-menu" :class="{ open: menuOpen }" :inert="!menuOpen">
-            <button type="button" class="dropdown-item" @click.stop="onPin">
-              <Icon :name="pinned ? 'pinOff' : 'pin'" cls="icon-sm" />
-              <span>{{ pinned ? 'Unpin' : 'Pin' }}</span>
-            </button>
-            <button type="button" class="dropdown-item" @click.stop="onLock">
-              <Icon :name="locked ? 'lockOpen' : 'lock'" cls="icon-sm" />
-              <span>{{ locked ? 'Unlock' : 'Lock' }}</span>
-            </button>
-            <div class="dropdown-divider"></div>
-            <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pass')">
-              <span class="status-dot pass"></span><span>Mark all Pass</span>
-            </button>
-            <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('fail')">
-              <span class="status-dot fail"></span><span>Mark all Fail</span>
-            </button>
-            <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pending')">
-              <span class="status-dot pending"></span><span>Mark all Pending</span>
-            </button>
-          </div>
+          <Teleport to="body">
+            <div
+              class="dropdown-menu dropdown-menu--floating"
+              :class="{ open: menuOpen }"
+              :style="menuStyle"
+              :inert="!menuOpen"
+            >
+              <button type="button" class="dropdown-item" @click.stop="onPin">
+                <Icon :name="pinned ? 'pinOff' : 'pin'" cls="icon-sm" />
+                <span>{{ pinned ? 'Unpin' : 'Pin' }}</span>
+              </button>
+              <button type="button" class="dropdown-item" @click.stop="onLock">
+                <Icon :name="locked ? 'lockOpen' : 'lock'" cls="icon-sm" />
+                <span>{{ locked ? 'Unlock' : 'Lock' }}</span>
+              </button>
+              <div class="dropdown-divider"></div>
+              <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pass')">
+                <span class="status-dot pass"></span><span>Mark all Pass</span>
+              </button>
+              <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('fail')">
+                <span class="status-dot fail"></span><span>Mark all Fail</span>
+              </button>
+              <button type="button" class="dropdown-item" :disabled="bulkDisabled" @click.stop="onBulk('pending')">
+                <span class="status-dot pending"></span><span>Mark all Pending</span>
+              </button>
+            </div>
+          </Teleport>
         </div>
       </div>
 

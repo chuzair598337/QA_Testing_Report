@@ -440,6 +440,7 @@
     max-width:1040px;
     margin:0 auto;
     padding:28px 24px 80px;
+    position:relative;
   }
 
   .module{
@@ -679,6 +680,17 @@
     display:none;
     z-index:30;
   }
+  /* Teleported to <body> (ModuleCard.vue/SubModuleCard.vue) to escape
+     .module's overflow:hidden — position:fixed + inline top/right (set
+     from the trigger's own getBoundingClientRect(), viewport-relative,
+     same coordinate space) replace the default position:absolute anchor. */
+  .dropdown-menu--floating{
+    position:fixed;
+    /* Above normal page content (module cards have no stacking context of
+       their own) but still below .modal-overlay's z-index:100, so an
+       active modal correctly covers a stray open menu if both coexist. */
+    z-index:50;
+  }
   /* Separates Pin/Lock from the bulk-mark items below them in the
      module/sub-module "more options" menu. */
   .dropdown-divider{
@@ -707,19 +719,25 @@
   .dropdown-item .icon{ color:var(--ink-soft); }
   /* Bulk-mark items (and any other dropdown-item) disabled while locked or
      with nothing in scope to mark — distinct cursor/opacity from the
-     export-menu's own [disabled] rule below, which means something else
+     report-menu's own [disabled] rule below, which means something else
      (a PDF actively generating), not "unavailable". */
   .dropdown-item:disabled{
     opacity:.5;
     cursor:not-allowed;
   }
   .dropdown-item:disabled:hover{ background:none; }
-  .export-wrap{ position:relative; flex-shrink:0; }
-  .export-menu{
+  /* Danger variant (Delete) — same red token as button.btn.danger above,
+     for the Dashboard 3-dot menu and ReportView's consolidated kebab
+     dropdown, both of which render Delete as a .dropdown-item rather than
+     a standalone .btn.danger. */
+  .dropdown-item.danger{ color:var(--fail); }
+  .dropdown-item.danger .icon{ color:var(--fail); }
+  .dropdown-item.danger:hover{ background:var(--fail-bg); }
+  .report-menu{
     min-width:168px;
     z-index:60;
   }
-  .export-menu .dropdown-item[disabled]{
+  .report-menu .dropdown-item[disabled]{
     opacity:.55;
     cursor:progress;
   }
@@ -962,6 +980,66 @@
   .empty-actions .btn{ margin:0; }
   #filter-empty[hidden]{ display:none !important; }
 
+  /* ---------- Busy overlay (generic, app-wide) ---------- */
+  .loading-frame{
+    position:relative;
+    min-height:240px;
+  }
+  .busy-overlay{
+    position:absolute;
+    inset:0;
+    /* Below .head-chrome/.dropdown-menu--floating(50) and .modal-overlay(100). */
+    z-index:45;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    background:rgba(255,255,255,0.82);
+    border-radius:inherit;
+    pointer-events:none;
+  }
+  html[data-theme="dark"] .busy-overlay{
+    background:rgba(22,29,43,0.82);
+  }
+  .busy-overlay.show{
+    display:flex;
+    pointer-events:auto;
+  }
+  .busy-overlay.fixed{
+    position:fixed;
+    /* Above .dropzone-overlay(90) — PDF export is the only fixed instance,
+       and it never needs to beat .modal-overlay's 100. */
+    z-index:95;
+  }
+  .busy-spinner{
+    width:28px;
+    height:28px;
+    border:3px solid var(--border);
+    border-top-color:var(--primary);
+    border-radius:50%;
+    animation:busy-spin .7s linear infinite;
+  }
+  @keyframes busy-spin{
+    to{ transform:rotate(360deg); }
+  }
+  .busy-overlay-label{
+    margin:0;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-soft);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .busy-spinner{
+      animation:busy-pulse 1.4s ease-in-out infinite;
+      border-color:var(--primary);
+    }
+  }
+  @keyframes busy-pulse{
+    0%, 100%{ opacity:.35; }
+    50%{ opacity:1; }
+  }
+
   /* Applied while html2pdf is capturing the page */
   body.generating-pdf .head-chrome{ position:static; box-shadow:none; }
   body.generating-pdf .head-actions,
@@ -1010,7 +1088,8 @@
     margin-bottom:0;
   }
 
-  a:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-visible{
+  a:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-visible,
+  [role="button"]:focus-visible{
     outline:2px solid var(--accent);
     outline-offset:2px;
   }
@@ -1035,6 +1114,7 @@
     max-width:360px;
     width:100%;
     padding:20px;
+    position:relative;
   }
   .modal-box--closable{ position:relative; }
   .modal-close-btn{
@@ -1344,6 +1424,23 @@
   .toast-action:hover{ background:var(--hover-bg); }
   .toast-action[hidden]{ display:none; }
 
+  /* Typed toasts (error/warning/success/info) — a colored left border +
+     matching leading-icon color, reusing the same status tokens already
+     used for status pills/dropdown-item.danger elsewhere, rather than a
+     fully-colored toast background (keeps the message text at the usual
+     --ink contrast in both themes instead of re-deriving text-on-color
+     contrast for four more color pairs). Default (no type class) reads as
+     the plain neutral toast this app always had. */
+  .toast-icon{ flex-shrink:0; }
+  .toast--error{ border-left:4px solid var(--fail); }
+  .toast--error .toast-icon{ color:var(--fail); }
+  .toast--warning{ border-left:4px solid var(--warn); }
+  .toast--warning .toast-icon{ color:var(--warn); }
+  .toast--success{ border-left:4px solid var(--pass); }
+  .toast--success .toast-icon{ color:var(--pass); }
+  .toast--info{ border-left:4px solid var(--accent); }
+  .toast--info .toast-icon{ color:var(--accent); }
+
   /* ---------- Phase 4 additions: Dashboard / ReportView / Manage access ---------- */
 
   .report-grid{
@@ -1360,12 +1457,19 @@
     display:flex;
     flex-direction:column;
     gap:12px;
+    cursor:pointer;
   }
   .report-card-head{
     display:flex;
     align-items:flex-start;
     justify-content:space-between;
     gap:10px;
+  }
+  .report-card-head-right{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-shrink:0;
   }
   .report-card-title{
     margin:0;
@@ -1426,6 +1530,8 @@
   .role-badge.owner{ background:var(--primary-soft); color:var(--primary); }
   .role-badge.editor{ background:var(--pending-bg); color:var(--ink-soft); }
   .role-badge.viewer{ background:var(--pending-bg); color:var(--ink-faint); }
+  .role-badge.pending{ background:var(--pending-bg); color:var(--ink-soft); }
+  .role-badge.you{ background:var(--pending-bg); color:var(--ink-faint); font-size:9.5px; }
   .archived-badge{
     display:inline-flex;
     align-items:center;
@@ -1466,37 +1572,6 @@
     color:var(--ink-faint);
   }
 
-  .member-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    padding:10px 0;
-    border-top:1px solid var(--border);
-    flex-wrap:wrap;
-  }
-  .member-row:first-of-type{ border-top:none; }
-  .member-row-id{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    min-width:0;
-    flex:1 1 auto;
-  }
-  .mono-id{
-    font-family:var(--mono);
-    font-size:12px;
-    color:var(--ink-soft);
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  .member-row-actions{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    flex-shrink:0;
-  }
   select.role-select{
     font-family:var(--mono);
     font-size:11.5px;
@@ -1509,31 +1584,174 @@
   }
   select.role-select:disabled{ cursor:not-allowed; opacity:.6; }
 
-  .your-id-chip{
-    display:inline-flex;
+  /* Manage Access module (2026-08-24 design spec) */
+  .modal-box--members{
+    max-width:560px;
+    width:100%;
+    max-height:min(88vh, 720px);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    text-align:left;
+  }
+  .manage-access-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:14px;
+  }
+  .manage-access-header h2{ margin:0; }
+  .manage-access-add-panel{
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:14px;
+    background:var(--surface-alt);
+  }
+  .manage-access-toolbar{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:12px;
+  }
+  /* Search fills all remaining width once sort/filter are icon buttons —
+     overrides the generic .search-wrap's max-width:360px (shared with
+     ReportView's test-case search, which does need that cap). */
+  .manage-access-toolbar .search-wrap{
+    max-width:none;
+    flex-basis:160px;
+  }
+  /* Only shown when search text or a non-"all" filter is active; wraps to
+     its own line on narrow widths via the toolbar's flex-wrap. */
+  .manage-access-clear{
+    font-size:12.5px;
+    padding:6px 12px;
+    flex-shrink:0;
+    margin-left:auto;
+  }
+  /* Sort/filter dropdown-item active state (icon-btn.active-state on the
+     filter trigger already covers "a non-default filter is applied" —
+     this covers the selected row inside either open dropdown). */
+  .dropdown-item.active{ color:var(--primary); font-weight:700; }
+  .dropdown-item-check{ margin-left:auto; color:var(--primary); flex-shrink:0; }
+  .manage-access-list{
+    overflow-y:auto;
+    flex:1 1 auto;
+    min-height:260px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding-right:2px;
+    position:relative;
+  }
+  @media (max-width:480px){
+    .manage-access-list{ min-height:200px; }
+  }
+  .member-card{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    flex-wrap:wrap;
+  }
+  .member-card.pending{ background:var(--surface-alt); }
+  .member-card-identity{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-width:0;
+    flex:1 1 auto;
+  }
+  .member-avatar{
+    flex-shrink:0;
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    background:var(--primary-soft);
+    color:var(--primary);
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .member-card-text{ min-width:0; }
+  .member-card-name{
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--ink);
+    display:flex;
     align-items:center;
     gap:6px;
+    min-width:0;
+  }
+  .member-card-name-text{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .member-card-email{
     font-family:var(--mono);
     font-size:11.5px;
     color:var(--ink-soft);
-    background:var(--pending-bg);
-    border:1px solid var(--border);
-    border-radius:999px;
-    padding:5px 6px 5px 12px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
   }
-  .your-id-chip button{
-    display:inline-flex;
+  .member-invite-meta{
+    font-size:11px;
+    color:var(--ink-faint);
+    margin-top:2px;
+  }
+  .member-card-actions{
+    display:flex;
     align-items:center;
-    justify-content:center;
-    width:22px;
-    height:22px;
-    border-radius:50%;
-    border:none;
-    background:none;
-    color:var(--ink-soft);
-    cursor:pointer;
+    gap:8px;
+    flex-shrink:0;
   }
-  .your-id-chip button:hover{ background:var(--hover-bg); color:var(--primary); }
+  /* List view (Task 11) — denser row: smaller avatar, no email/invite-meta
+     line. Toggled via .manage-access-toolbar's card/list icon-button. */
+  .member-card--compact{ padding:6px 10px; }
+  .member-card--compact .member-avatar{ width:24px; height:24px; font-size:10px; }
+  .member-card--compact .member-card-email{ display:none; }
+  .member-card--compact .member-invite-meta{ display:none; }
+  /* Gap above Close — list and action row were touching. */
+  .modal-box--members .modal-actions{
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px solid var(--border);
+  }
+  /* Tighter empty state inside a compact modal vs. a full page. */
+  .modal-box--members .empty-state{
+    padding:32px 20px;
+    margin:0;
+  }
+
+  /* Settings modal (2026-08-24 design spec, Task 5) */
+  .modal-box--settings{ max-width:520px; width:100%; max-height:min(86vh,640px); display:flex; flex-direction:column; overflow:hidden; text-align:left; }
+  .settings-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .settings-layout{ display:flex; gap:16px; flex:1 1 auto; min-height:0; }
+  .settings-nav{ display:flex; flex-direction:column; gap:2px; flex:0 0 140px; }
+  .settings-nav-item{ display:flex; align-items:center; gap:8px; width:100%; padding:9px 10px; border:none; border-radius:6px; background:none; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink-soft); cursor:pointer; text-align:left; }
+  .settings-nav-item:hover{ background:var(--hover-bg); }
+  .settings-nav-item.active{ background:var(--primary-soft); color:var(--primary); }
+  .settings-panel{ flex:1 1 auto; min-width:0; overflow-y:auto; }
+  .settings-footer{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; }
+  .settings-profile{ display:flex; align-items:center; gap:14px; padding:8px 0; }
+  .settings-profile-avatar{ width:56px; height:56px; border-radius:50%; background:var(--primary-soft); color:var(--primary); font-family:var(--mono); font-size:18px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .settings-profile-name{ font-size:15px; font-weight:700; color:var(--ink); }
+  .settings-profile-email{ font-family:var(--mono); font-size:12.5px; color:var(--ink-soft); }
+  .bin-list{ display:flex; flex-direction:column; gap:8px; }
+  .bin-item{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); flex-wrap:wrap; }
+  .bin-item-actions{ display:flex; gap:8px; flex-shrink:0; }
+  .bin-item-readonly{ flex-shrink:0; text-align:right; }
 
   .report-detail-head{
     display:flex;
@@ -1553,4 +1771,17 @@
     text-decoration:none;
     margin-bottom:8px;
   }
+
+  /* Dashboard card/list view toggle (Task 10) */
+  .view-toggle{ display:inline-flex; gap:2px; margin-bottom:12px; border:1px solid var(--border-strong); border-radius:8px; padding:2px; }
+  .view-toggle-btn{ display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:none; border-radius:6px; background:none; font-family:var(--sans); font-size:12.5px; font-weight:600; color:var(--ink-faint); cursor:pointer; }
+  .view-toggle-btn.active{ background:var(--primary-soft); color:var(--primary); }
+  .report-grid--list{ display:flex; flex-direction:column; gap:8px; grid-template-columns:none; }
+  .report-grid--list .report-card{ flex-direction:row; align-items:center; padding:10px 14px; gap:14px; }
+  .report-grid--list .report-card-head{ flex:0 0 240px; }
+  .report-grid--list .report-card-stats{ display:flex; gap:14px; flex:0 0 auto; }
+  .report-grid--list .report-card-stats .stat-tile{ padding:0; background:none; border:none; }
+  .report-grid--list .report-card-stats .stat-tile .stat-label{ white-space:nowrap; }
+  .report-grid--list .progress-track.mini{ flex:1 1 auto; max-width:160px; }
+  .report-grid--list .report-card-empty{ flex:1 1 auto; }
   .report-detail-back:hover{ color:var(--primary); }
