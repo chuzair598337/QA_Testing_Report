@@ -1,0 +1,70 @@
+name: Wiki & Report Agent
+
+# Daily. Single headless `claude -p` call, summarizes the last 24h of
+# closed issues + merged PRs, updates the wiki, posts to Slack. Requires
+# the repo wiki to be enabled + initialized with one page (Settings ->
+# Features -> Wikis), or the clone step below fails.
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # daily, 9am UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # write is for the wiki push (a separate git repo), not this one
+  issues: read
+  pull-requests: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm install -g @anthropic-ai/claude-code@latest
+
+      - name: Gather yesterday's activity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue list --state closed --search "closed:>=$(date -d '1 day ago' +%Y-%m-%d)" --json number,title,closedAt,labels > closed_issues.json
+          gh pr list --state merged --search "merged:>=$(date -d '1 day ago' +%Y-%m-%d)" --json number,title,mergedAt > merged_prs.json
+
+      - name: Clone wiki
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
+          git -C wiki config user.name "wiki-report-agent"
+          git -C wiki config user.email "agent@noreply.local"
+
+      - name: Run Wiki Agent
+        working-directory: wiki
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          PROMPT="$(cat ../.claude/roles/wiki-report.md)
+
+          You're already in the wiki git checkout (cwd) — edit or create
+          Bug-Resolution-History.md here, then \`git add\`, \`git commit\`,
+          and \`git push\` it yourself before finishing.
+
+          Closed issues: $(cat ../closed_issues.json)
+          Merged PRs: $(cat ../merged_prs.json)"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Edit,Write,Bash(git:*)" \
+            --max-turns 10 \
+            --output-format json > ../report.json
+
+      - name: Post to Slack
+        env:
+          # `secrets.*` can't be referenced directly in an `if:` expression
+          # (fails workflow parsing) — guard inside the shell instead.
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set — skipping Slack post. Wiki was still updated."
+            exit 0
+          fi
+          MSG=$(jq -r '.result' report.json)
+          curl -sf -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": $(jq -Rs . <<< "$MSG")}" \
+            "$SLACK_WEBHOOK_URL"

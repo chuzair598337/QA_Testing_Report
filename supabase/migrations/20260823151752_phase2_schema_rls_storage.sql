@@ -174,7 +174,10 @@ create policy reports_update on public.reports
   using (private.report_role(id) = 'owner')
   with check (private.report_role(id) = 'owner');
 
--- (no delete policy: soft delete only, via archived_at through reports_update)
+-- A delete policy now exists: reports_delete_archived_owner, added in
+-- phase11_reports_hard_delete_bin, scoped to archived reports and
+-- owner-only (permanent delete from the Bin). Soft delete (archived_at via
+-- reports_update above) remains the only path for a live report.
 
 -- report_members
 create policy report_members_select on public.report_members

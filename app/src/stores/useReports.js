@@ -268,74 +268,47 @@ async function insertHierarchy(reportId, modulesJson) {
 // Report-level actions
 // ---------------------------------------------------------------------
 
-// Soft delete only — the schema has no delete policy for `reports` (see
-// Phase 2 migration), so "Delete" in the UI sets archived_at rather than
-// removing the row.
+// Soft delete only — the schema has no *unscoped* delete policy for
+// `reports` (see Phase 2 migration; Phase 11 added a narrow archived+owner
+// -only one — see deleteReportPermanently below), so "Delete" in the UI
+// sets archived_at rather than removing the row.
+//
+// All three functions below share the same shape: PostgREST returns
+// error:null whether an update/delete touched one row or zero (e.g. RLS
+// silently denied it), so each asks for the touched row back via
+// .select('id') and treats an empty result as a denial, not a success.
 async function archiveReport(reportId) {
-  return supabase.from('reports').update({ archived_at: new Date().toISOString() }).eq('id', reportId)
-}
-
-async function unarchiveReport(reportId) {
-  return supabase.from('reports').update({ archived_at: null }).eq('id', reportId)
-}
-
-// ---------------------------------------------------------------------
-// Membership actions
-//
-// Invite-by-email: report_members can only ever be written directly by
-// (a) a report's owner inserting an arbitrary member row, or (b) a
-// brand-new report's creator bootstrapping their own owner row (see the
-// report_members_insert / report_members_insert_bootstrap policies in
-// the Phase 2 migration). Neither policy — nor anything else reachable
-// with only the anon key — lets the client resolve an email address to a
-// user_id (no admin API, no profiles table), so this cannot be a direct
-// table write from here.
-//
-// Instead this calls the `invite-member` Edge Function, which holds the
-// service-role key server-side (never in the browser) to: verify the
-// caller actually owns this report (via the caller's own JWT, respecting
-// RLS, before touching anything privileged), look up whether the email
-// already has an account, and either insert the member row directly
-// (existing account) or call admin.inviteUserByEmail() (new account —
-// its raw_user_meta_data carries invited_report_id/invited_role, which a
-// Postgres trigger reads to auto-attach report_members the moment that
-// invite is accepted and the account is created).
-// ---------------------------------------------------------------------
-async function inviteMember(reportId, email, role) {
-  const value = (email || '').trim()
-
-  if (!value) {
-    return { data: null, error: 'Enter an email address.' }
-  }
-  if (!['editor', 'viewer'].includes(role)) {
-    return { data: null, error: 'Role must be editor or viewer.' }
-  }
-
-  const { data, error } = await supabase.functions.invoke('invite-member', {
-    body: { report_id: reportId, email: value, role },
-  })
-
-  if (error) {
-    // supabase-js surfaces non-2xx Edge Function responses as a generic
-    // FunctionsHttpError — the function's own { error } body carries the
-    // real message, so pull it out for a useful inline message.
-    const detail = await error.context?.json?.().catch(() => null)
-    return { data: null, error: detail?.error || error.message }
-  }
-
-  if (data?.error) {
-    return { data: null, error: data.error }
-  }
-
+  const { data, error } = await supabase
+    .from('reports')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', reportId)
+    .select('id')
+  if (error) return { data: null, error: error.message }
+  if (!data?.length) return { data: null, error: 'Could not delete this report — you may not have permission.' }
   return { data, error: null }
 }
 
-async function updateMemberRole(memberId, role) {
-  return supabase.from('report_members').update({ role }).eq('id', memberId).select().single()
+async function unarchiveReport(reportId) {
+  const { data, error } = await supabase
+    .from('reports')
+    .update({ archived_at: null })
+    .eq('id', reportId)
+    .select('id')
+  if (error) return { data: null, error: error.message }
+  if (!data?.length) return { data: null, error: 'Could not restore this report — you may not have permission.' }
+  return { data, error: null }
 }
 
-async function removeMember(memberId) {
-  return supabase.from('report_members').delete().eq('id', memberId)
+// Hard delete — Bin-only, irreversible. Requires archived_at already set
+// (enforced both by the UI flow and server-side by the
+// reports_delete_archived_owner RLS policy from Task 3/Phase 11).
+async function deleteReportPermanently(reportId) {
+  const { data, error } = await supabase.from('reports').delete().eq('id', reportId).select('id')
+  if (error) return { data: null, error: error.message }
+  if (!data?.length) {
+    return { data: null, error: 'Could not permanently delete this report — you may not have permission.' }
+  }
+  return { data, error: null }
 }
 
 // ---------------------------------------------------------------------
@@ -359,9 +332,7 @@ export function useReports() {
     createReport,
     archiveReport,
     unarchiveReport,
-    inviteMember,
-    updateMemberRole,
-    removeMember,
+    deleteReportPermanently,
     updateTestStatus,
     updateTestNote,
   }

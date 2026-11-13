@@ -1,12 +1,15 @@
 <script setup>
 // Real single-report view (Phase 4 + Phase 5): modules/sub-modules/tests
 // tree with status + note editing (role-gated), stats/progress, pin/lock,
-// filters/jump-nav, export (PDF/JSON), Generate report, and the owner-only
-// Manage Access panel (member list, role changes, invites, removal).
+// filters/jump-nav, export (PDF/JSON), Generate report, and the trigger
+// button for the owner-only Manage Access panel — the panel's own state
+// (member list, role changes, invites, removal) lives in
+// ManageAccessModal.vue (Task 8/6 of the 2026-08-24 design), this file
+// just renders the button and passes props/handles the open flag.
 //
 // Phase 4 built the data/role-gating layer (all reused unchanged here:
 // fetchReportDetail/getMyRole/updateTestStatus/updateTestNote from
-// useReports.js, plus the whole Manage Access modal below). Phase 5 adds
+// useReports.js). Phase 5 adds
 // the useReportRunner.js/useTreeUiState.js/useImportExport.js layers and
 // splits the tree markup into ModuleCard/SubModuleCard/TestRow/StatTiles/
 // ProgressBar, porting pin/lock/filter/jump-nav/scroll-collapse/export
@@ -24,19 +27,14 @@ import Icon from '../components/icons/Icon.vue'
 import ModuleCard from '../components/ModuleCard.vue'
 import StatTiles from '../components/StatTiles.vue'
 import ProgressBar from '../components/ProgressBar.vue'
+import ManageAccessModal from '../components/ManageAccessModal.vue'
+import SettingsModal from '../components/SettingsModal.vue'
+import BusyOverlay from '../components/BusyOverlay.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { user } = useAuth()
-const {
-  getMyRole,
-  archiveReport,
-  inviteMember,
-  updateMemberRole,
-  removeMember,
-  updateTestStatus,
-  updateTestNote,
-} = useReports()
+const { getMyRole, archiveReport, updateTestStatus, updateTestNote } = useReports()
 
 const reportId = route.params.id
 
@@ -231,7 +229,7 @@ async function handleStatusChange(testVm, newStatus) {
   statusBusy[test.id] = false
   if (error) {
     test.status = prev
-    showToast(error.message || 'Could not update status.')
+    showToast(error.message || 'Could not update status.', { type: 'error' })
   }
 }
 
@@ -243,7 +241,7 @@ function handleNoteInput(testVm, value) {
   noteDebounceTimers[test.id] = setTimeout(async () => {
     const { error } = await updateTestNote(test.id, value)
     if (error) {
-      showToast(error.message || 'Could not save note.')
+      showToast(error.message || 'Could not save note.', { type: 'error' })
       return
     }
     test.note = value || null
@@ -274,28 +272,37 @@ function confirmYes() {
   if (cb) cb()
 }
 
-// Focus management for all three modals (AA audit — see useModalFocus.js).
-// ESC and backdrop-click are wired separately below/in the template.
+// Focus management for the two modals this file still owns (confirm and
+// generate-report — AA audit, see useModalFocus.js). Manage Access moved
+// its own focus management into ManageAccessModal.vue (Task 8/6). ESC and
+// backdrop-click are wired separately below/in the template.
 const confirmModalBox = ref(null)
 useModalFocus(
   () => confirmModal.open,
   confirmModalBox,
 )
 
+const bulkMarkBusy = ref(false)
+
 function handleBulkMark(testVms, targetStatus, scopeLabel) {
   const realTests = testVms.map((tv) => findTest(tv.id)).filter(Boolean)
   const overwriteCount = realTests.filter((t) => t.status !== 'pending' && t.status !== targetStatus).length
 
   const apply = async () => {
-    for (const t of realTests) {
-      if (t.status === targetStatus) continue
-      const prev = t.status
-      t.status = targetStatus
-      const { error } = await updateTestStatus(t.id, targetStatus)
-      if (error) {
-        t.status = prev
-        showToast(error.message || 'Could not update one or more tests.')
+    bulkMarkBusy.value = true
+    try {
+      for (const t of realTests) {
+        if (t.status === targetStatus) continue
+        const prev = t.status
+        t.status = targetStatus
+        const { error } = await updateTestStatus(t.id, targetStatus)
+        if (error) {
+          t.status = prev
+          showToast(error.message || 'Could not update one or more tests.', { type: 'error' })
+        }
       }
+    } finally {
+      bulkMarkBusy.value = false
     }
   }
 
@@ -313,18 +320,171 @@ function handleBulkMark(testVms, targetStatus, scopeLabel) {
 }
 
 // ---------------------------------------------------------------------
+// Reset all (report-wide) + one-level Undo. Ported from the legacy static
+// app's Reset-all + Undo (js/app.js, commits 5048dc7/c13ae12), adapted to
+// write through updateTestStatus/updateTestNote since status/notes are
+// server-persisted and shared here, not just in-memory. Unlike the
+// module/sub-module-scoped bulk-mark above, this walks the whole report.
+// ---------------------------------------------------------------------
+const lastResetSnapshot = ref(null)
+
+function handleResetAll() {
+  reportMenuOpen.value = false
+  const affected = []
+  for (const mod of tree.value) {
+    // Skipping a locked module skips all its sub-modules/tests with it —
+    // matches "locked cases can't have their status or note edited".
+    if (treeUi.lockedModules[mod.id]) continue
+    for (const sm of mod.subModules) {
+      if (treeUi.lockedSubModules[sm.id]) continue
+      for (const t of sm.tests) {
+        if (t.status !== 'pending' || (t.note && t.note.trim())) affected.push(t)
+      }
+    }
+  }
+  if (affected.length === 0) {
+    showToast('Nothing to reset — every test is already pending with no notes.', { type: 'info' })
+    return
+  }
+  openConfirm(
+    'Reset all?',
+    `This clears status and notes on ${affected.length} test${affected.length === 1 ? '' : 's'} across this report. You can undo it right after.`,
+    () => applyResetAll(affected),
+  )
+}
+
+async function applyResetAll(affectedVms) {
+  const realTests = affectedVms.map((tv) => findTest(tv.id)).filter(Boolean)
+  // Single most-recent-only slot (not a stack) — overwritten by the next
+  // Reset, and consumed/cleared by Undo. Both "only the most recent reset
+  // is undoable" and "cleared on next reset" fall out of this with no
+  // extra bookkeeping. In-memory only (a ref), so it doesn't survive a
+  // reload, matching the legacy app's snapshot lifetime.
+  lastResetSnapshot.value = realTests.map((t) => ({ id: t.id, status: t.status, note: t.note }))
+
+  bulkMarkBusy.value = true
+  try {
+    for (const t of realTests) {
+      const prevStatus = t.status
+      const prevNote = t.note
+      t.status = 'pending'
+      t.note = null
+      const [{ error: statusError }, { error: noteError }] = await Promise.all([
+        updateTestStatus(t.id, 'pending'),
+        updateTestNote(t.id, ''),
+      ])
+      if (statusError || noteError) {
+        t.status = prevStatus
+        t.note = prevNote
+        showToast((statusError || noteError).message || 'Could not reset one or more tests.', { type: 'error' })
+      }
+    }
+  } finally {
+    bulkMarkBusy.value = false
+  }
+
+  showToast('All test cases reset.', { type: 'success', duration: 6000, action: { label: 'Undo', onAction: undoReset } })
+}
+
+// Restores every reset test's prior status+note via a fresh write-back to
+// Supabase (not just local state), since status/notes are shared/persisted
+// across devices and other users. A concurrent edit by someone else between
+// Reset and Undo is an accepted last-write-wins race — the same way every
+// other status/note edit in this app already behaves; no locking added.
+async function undoReset() {
+  const snapshot = lastResetSnapshot.value
+  if (!snapshot) return
+  lastResetSnapshot.value = null // consumed-once, so the toast button can't double-fire this
+
+  bulkMarkBusy.value = true
+  try {
+    for (const entry of snapshot) {
+      const t = findTest(entry.id)
+      if (!t) continue
+      t.status = entry.status
+      t.note = entry.note
+      const [{ error: statusError }, { error: noteError }] = await Promise.all([
+        updateTestStatus(entry.id, entry.status),
+        updateTestNote(entry.id, entry.note || ''),
+      ])
+      if (statusError || noteError) {
+        showToast((statusError || noteError).message || 'Could not fully undo the reset.', { type: 'error' })
+      }
+    }
+  } finally {
+    bulkMarkBusy.value = false
+  }
+}
+
+// ---------------------------------------------------------------------
 // Toast
 // ---------------------------------------------------------------------
 const toastMessage = ref('')
 const toastVisible = ref(false)
+const toastAction = ref(null)
+const toastTop = ref(20)
 let toastTimer = null
-function showToast(message) {
+
+// One of 'info' | 'success' | 'warning' | 'error' — drives the toast's left
+// accent border/icon color (base.css .toast--*) and which leading icon
+// shows. Kept as a small closed set rather than an arbitrary CSS class so
+// every call site is forced to pick a real severity instead of drifting
+// into ad-hoc styling per call.
+const TOAST_ICONS = { info: 'info', success: 'check', warning: 'alertTriangle', error: 'alertCircle' }
+const toastType = ref('info')
+
+// Template refs on .head-chrome/.head-metrics (bound in the template below)
+// — used to position the toast just below whatever header chrome is
+// actually visible right now, instead of a fixed offset.
+const headChromeEl = ref(null)
+const headMetricsEl = ref(null)
+
+// Ported from the legacy static app's showToast() (js/app.js, commit
+// c13ae12). .head-chrome is sticky-pinned so its bottom edge is always
+// where the title/actions row actually ends; .head-metrics isn't sticky,
+// so its bottom only matters while it's still scrolled into view — once
+// the page scrolls past it, its rect goes non-positive and chromeBottom
+// (always positive) wins instead. When no report has loaded yet
+// .head-metrics is absent (v-if="report"), giving 0 that never wins over
+// chromeBottom.
+function positionToast() {
+  const chromeBottom = headChromeEl.value?.getBoundingClientRect().bottom || 0
+  const metricsBottom = headMetricsEl.value?.getBoundingClientRect().bottom || 0
+  toastTop.value = Math.max(chromeBottom, metricsBottom) + 12
+}
+
+// `action`, when given, is { label, onAction } — shows a clickable action
+// button next to the message (e.g. Reset-all's "Undo") instead of the
+// plain text-only toast. Ported from the legacy showToast()'s 3rd arg
+// (js/app.js, commit 5048dc7), extended with `type` for the
+// error/warning/success/info variants — an options object rather than
+// more positional params since most calls now only need one of the three
+// optional fields and positional `(msg, undefined, undefined, 'error')`
+// calls would read worse than named ones.
+function showToast(message, { type = 'info', duration = 3200, action = null } = {}) {
   toastMessage.value = message
+  toastType.value = type
+  toastAction.value = action
+  positionToast()
   toastVisible.value = true
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => {
     toastVisible.value = false
-  }, 3200)
+    toastAction.value = null
+  }, duration)
+}
+
+// Clicking the action button fires its handler then dismisses the toast
+// immediately, clearing the pending auto-dismiss timer so a stale handler
+// can't fire again after the toast is already gone (same guard the legacy
+// app had around toastActionHandler).
+function handleToastAction() {
+  const action = toastAction.value
+  if (!action) return
+  clearTimeout(toastTimer)
+  toastVisible.value = false
+  toastAction.value = null
+  action.onAction()
 }
 
 // ---------------------------------------------------------------------
@@ -333,89 +493,46 @@ function showToast(message) {
 async function handleDeleteReport() {
   const { error } = await archiveReport(reportId)
   if (error) {
-    showToast(error.message || 'Could not delete report.')
+    showToast(error || 'Could not delete report.', { type: 'error' })
     return
   }
   router.push('/dashboard')
 }
 
 // ---------------------------------------------------------------------
-// Manage Access panel (owner-only) — unchanged from Phase 4.
+// Manage Access panel (owner-only). Its own internal state (member list,
+// invite form, role changes, removal) now lives inside
+// ManageAccessModal.vue/useReportMembers.js (Task 8/6) — this file only
+// keeps the open/close flag, since the trigger button and the PDF-capture
+// snapshot logic in handleDownloadPdf both need it.
 // ---------------------------------------------------------------------
 const manageOpen = ref(false)
-const manageModalBox = ref(null)
-useModalFocus(manageOpen, manageModalBox)
-const inviteValue = ref('')
-const inviteRole = ref('viewer')
-const inviteBusy = ref(false)
-const inviteError = ref('')
-const inviteSuccess = ref('')
 
-async function submitInvite() {
-  inviteError.value = ''
-  inviteSuccess.value = ''
-  if (!inviteValue.value.trim()) {
-    inviteError.value = 'Enter an email address.'
-    return
-  }
-  inviteBusy.value = true
-  const { data, error } = await inviteMember(reportId, inviteValue.value, inviteRole.value)
-  inviteBusy.value = false
-  if (error) {
-    inviteError.value = error
-    return
-  }
-  if (data?.status === 'added') {
-    await load()
-  }
-  inviteSuccess.value = data?.message || 'Invite sent.'
-  inviteValue.value = ''
-}
+// Settings modal — Profile/Theme/Logout + Bin. Fully self-contained; see
+// SettingsModal.vue. No @reports-changed here — this view holds no
+// reports list to refresh.
+const settingsOpen = ref(false)
 
-const roleChangeBusy = reactive({})
-async function handleRoleChange(member, newRole) {
-  const prev = member.role
-  member.role = newRole
-  const ownerCount = members.value.filter((m) => m.role === 'owner').length
-  if (prev === 'owner' && newRole !== 'owner' && ownerCount <= 1) {
-    member.role = prev
-    showToast("Can't demote the only owner — promote someone else first.")
-    return
-  }
-
-  roleChangeBusy[member.id] = true
-  const { error } = await updateMemberRole(member.id, newRole)
-  roleChangeBusy[member.id] = false
-  if (error) {
-    member.role = prev
-    showToast(error.message || 'Could not update role.')
-  }
-}
-
-async function handleRemoveMember(member) {
-  const ownerCount = members.value.filter((m) => m.role === 'owner').length
-  if (member.role === 'owner' && ownerCount <= 1) {
-    showToast("Can't remove the only owner — promote someone else first.")
-    return
-  }
-
-  const { error } = await removeMember(member.id)
-  if (error) {
-    showToast(error.message || 'Could not remove member.')
-    return
-  }
-  members.value = members.value.filter((m) => m.id !== member.id)
+// After a successful ownership transfer inside ManageAccessModal, the
+// current user's own role may have changed — re-load so isOwner/myRole
+// (both derived from `members`) reflect it.
+async function onMembershipChanged() {
+  await load()
 }
 
 // ---------------------------------------------------------------------
-// Export menu (Download PDF / Download JSON / Generate report) + Generate
-// report modal. Ported from js/app.js's export dropdown (~line 855) and the
-// Generate report modal (~line 1071-1487).
+// Report actions menu (Download PDF / Download JSON / Generate report /
+// Manage access / Delete — consolidated into one flat kebab dropdown by
+// Task 9; originally a standalone Export dropdown ported from js/app.js's
+// export dropdown, ~line 855) + Generate report modal (~line 1071-1487).
 // ---------------------------------------------------------------------
 const importExport = useImportExport()
 const { reportSettings } = importExport
 
-const exportMenuOpen = ref(false)
+const reportMenuOpen = ref(false)
+function toggleReportMenu() {
+  reportMenuOpen.value = !reportMenuOpen.value
+}
 const reportModalOpen = ref(false)
 const reportModalBox = ref(null)
 useModalFocus(reportModalOpen, reportModalBox)
@@ -432,12 +549,12 @@ const reportClipboardHtml = computed(() =>
 )
 
 function handleDownloadJson() {
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   importExport.downloadJson(reportTitle.value, tree.value)
 }
 
 async function handleDownloadPdf() {
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   pdfBusy.value = true
   // Snapshot + close any open modal so it isn't photographed into the
   // capture, then restore — same as the legacy downloadPdf()'s
@@ -452,7 +569,7 @@ async function handleDownloadPdf() {
   try {
     await importExport.downloadPdf(document.body)
   } catch {
-    showToast('PDF generation failed. Please try again.')
+    showToast('PDF generation failed. Please try again.', { type: 'error' })
   } finally {
     document.body.classList.remove('generating-pdf')
     manageOpen.value = wasManageOpen
@@ -462,7 +579,7 @@ async function handleDownloadPdf() {
 }
 
 function handleOpenReportModal() {
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   const anyCases = importExport.collectReportCases(tree.value, {
     all: true,
     passed: false,
@@ -470,7 +587,7 @@ function handleOpenReportModal() {
     failedOnly: false,
   })
   if (anyCases.total === 0) {
-    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.')
+    showToast('No passed or failed tests yet. Mark tests as Pass or Fail to generate a report.', { type: 'warning' })
     return
   }
   reportCopyLabel.value = 'Copy to clipboard'
@@ -489,7 +606,7 @@ function onReportSettingToggle(key, checked) {
 async function handleCopyReport() {
   const { error } = await importExport.copyReportToClipboard(reportPlainText.value, reportClipboardHtml.value)
   if (error) {
-    showToast(error)
+    showToast(error, { type: 'error' })
     return
   }
   reportCopyLabel.value = 'Copied!'
@@ -509,16 +626,17 @@ function handleDownloadReport() {
 // js/app.js ~line 893-904) — at >900px .head-actions is a normal flex
 // row and this button/state is invisible/inert (see responsive.css);
 // below that, .head-actions is display:none unless .is-open, and this
-// toggle is the only way to reach Export/Manage access/Delete at all.
+// toggle is the only way to reach the report-actions menu (and Settings)
+// at all.
 const mobileNavOpen = ref(false)
 function toggleMobileNav() {
   mobileNavOpen.value = !mobileNavOpen.value
-  if (!mobileNavOpen.value) exportMenuOpen.value = false
+  if (!mobileNavOpen.value) reportMenuOpen.value = false
 }
 
 function closeAllMenus() {
   treeUi.closeMenu()
-  exportMenuOpen.value = false
+  reportMenuOpen.value = false
   reportSettingsOpen.value = false
   mobileNavOpen.value = false
 }
@@ -533,11 +651,6 @@ function onDocumentKeydown(e) {
   }
   if (reportModalOpen.value) {
     closeReportModal()
-    return
-  }
-  // AA audit: Manage Access previously had no ESC route out at all.
-  if (manageOpen.value) {
-    manageOpen.value = false
     return
   }
   closeAllMenus()
@@ -597,7 +710,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="head-chrome" :class="{ 'nav-open': mobileNavOpen }">
+  <div ref="headChromeEl" class="head-chrome" :class="{ 'nav-open': mobileNavOpen }">
     <div class="head-inner">
       <div class="head-top">
         <div class="head-title-block">
@@ -625,24 +738,33 @@ onUnmounted(() => {
           <Icon :name="mobileNavOpen ? 'x' : 'menu'" cls="icon-md nav-toggle-icon" />
         </button>
         <div id="head-actions" class="head-actions" :class="{ 'is-open': mobileNavOpen }">
-          <div class="menu-wrap export-wrap">
+          <div class="menu-wrap">
             <button
-              class="btn"
               type="button"
-              :disabled="!statsView.total_tests || pdfBusy"
-              :aria-expanded="exportMenuOpen"
+              class="icon-btn"
+              :disabled="pdfBusy"
               aria-haspopup="true"
-              @click.stop="exportMenuOpen = !exportMenuOpen"
+              :aria-expanded="reportMenuOpen"
+              title="Report actions"
+              @click.stop="toggleReportMenu"
             >
-              <Icon name="download" cls="icon-sm" />
-              <span class="btn-label">{{ pdfBusy ? 'Generating…' : 'Export' }}</span>
+              <Icon name="ellipsisVertical" />
             </button>
-            <div class="dropdown-menu export-menu" :class="{ open: exportMenuOpen }" :inert="!exportMenuOpen">
-              <button type="button" class="dropdown-item" @click="handleDownloadPdf">
+            <div
+              class="dropdown-menu report-menu"
+              :class="{ open: reportMenuOpen }"
+              :inert="!reportMenuOpen && !mobileNavOpen"
+            >
+              <button
+                type="button"
+                class="dropdown-item"
+                :disabled="!statsView.total_tests || pdfBusy"
+                @click="handleDownloadPdf"
+              >
                 <Icon name="download" cls="icon-sm" />
-                <span>Download PDF</span>
+                <span>{{ pdfBusy ? 'Generating…' : 'Download PDF' }}</span>
               </button>
-              <button type="button" class="dropdown-item" @click="handleDownloadJson">
+              <button type="button" class="dropdown-item" :disabled="!statsView.total_tests" @click="handleDownloadJson">
                 <Icon name="download" cls="icon-sm" />
                 <span>Download JSON</span>
               </button>
@@ -650,20 +772,31 @@ onUnmounted(() => {
                 <Icon name="fileJson" cls="icon-sm" />
                 <span>Generate report</span>
               </button>
+              <button v-if="canEditTests" type="button" class="dropdown-item" @click="handleResetAll">
+                <Icon name="rotateCcw" cls="icon-sm" />
+                <span>Reset all</span>
+              </button>
+              <template v-if="isOwner">
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-item" @click="manageOpen = true; reportMenuOpen = false">
+                  <Icon name="users" cls="icon-sm" />
+                  <span>Manage access</span>
+                </button>
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-item danger" @click="handleDeleteReport">
+                  <Icon name="trash2" cls="icon-sm" />
+                  <span>Delete</span>
+                </button>
+              </template>
             </div>
           </div>
-          <button v-if="isOwner" class="btn" type="button" @click="manageOpen = true">
-            <Icon name="users" cls="icon-sm" />
-            <span class="btn-label">Manage access</span>
-          </button>
-          <button v-if="isOwner" class="btn danger" type="button" @click="handleDeleteReport">
-            <Icon name="trash2" cls="icon-sm" />
-            <span class="btn-label">Delete</span>
+          <button class="btn" type="button" @click="settingsOpen = true">
+            <Icon name="settings" /><span class="btn-label">Settings</span>
           </button>
         </div>
       </div>
 
-      <div v-if="report" class="head-metrics">
+      <div v-if="report" ref="headMetricsEl" class="head-metrics">
         <StatTiles :stats="statsView" :active-filter="currentFilter" @filter="handleFilterClick" />
         <ProgressBar :percent="statsView.pass_percent" :label="`${statsView.pass_percent}% passed`" />
 
@@ -724,121 +857,62 @@ onUnmounted(() => {
   </div>
 
   <main>
-    <div v-if="loading" class="empty-state">
-      <p class="empty-hint">Loading report…</p>
-    </div>
-
-    <div v-else-if="loadError" class="empty-state">
-      <p class="auth-error">{{ loadError }}</p>
-      <div class="empty-actions">
-        <button class="btn" type="button" @click="load">Try again</button>
-        <RouterLink class="btn" to="/dashboard">Back to dashboard</RouterLink>
+    <!-- Sibling of the :inert wrapper below, not a descendant — an inert
+         ancestor would remove this overlay's role="status" label from the
+         accessibility tree too, silencing the announcement it exists to make. -->
+    <BusyOverlay :active="bulkMarkBusy" label="Updating tests…" />
+    <div :inert="bulkMarkBusy">
+      <div v-if="loading" class="loading-frame">
+        <BusyOverlay :active="loading" label="Loading report…" />
       </div>
-    </div>
 
-    <div v-else-if="tree.length === 0" class="empty-state">
-      <h2 class="empty-title">No modules in this report</h2>
-      <p class="empty-hint">This report's imported JSON had no modules.</p>
-    </div>
-
-    <template v-else>
-      <ModuleCard
-        v-for="mod in viewTree"
-        v-show="!mod.hidden"
-        :key="mod.id"
-        :mod="mod"
-        :status-busy="statusBusy"
-        :on-status-change="handleStatusChange"
-        :on-note-input="handleNoteInput"
-        :on-bulk-mark="handleBulkMark"
-      />
-
-      <div v-if="showFilterEmpty" id="filter-empty" class="empty-state empty-state--filter">
-        <div class="empty-icon" aria-hidden="true"><Icon name="search" cls="icon-lg" /></div>
-        <h2 class="empty-title">{{ filterEmptyMessage.title }}</h2>
-        <p class="empty-hint">{{ filterEmptyMessage.hint }}</p>
+      <div v-else-if="loadError" class="empty-state">
+        <p class="auth-error">{{ loadError }}</p>
         <div class="empty-actions">
-          <button class="btn primary" type="button" @click="clearFilterAndSearch">Show all cases</button>
+          <button class="btn" type="button" @click="load">Try again</button>
+          <RouterLink class="btn" to="/dashboard">Back to dashboard</RouterLink>
         </div>
       </div>
-    </template>
+
+      <div v-else-if="tree.length === 0" class="empty-state">
+        <h2 class="empty-title">No modules in this report</h2>
+        <p class="empty-hint">This report's imported JSON had no modules.</p>
+      </div>
+
+      <template v-else>
+        <ModuleCard
+          v-for="mod in viewTree"
+          v-show="!mod.hidden"
+          :key="mod.id"
+          :mod="mod"
+          :status-busy="statusBusy"
+          :on-status-change="handleStatusChange"
+          :on-note-input="handleNoteInput"
+          :on-bulk-mark="handleBulkMark"
+        />
+
+        <div v-if="showFilterEmpty" id="filter-empty" class="empty-state empty-state--filter">
+          <div class="empty-icon" aria-hidden="true"><Icon name="search" cls="icon-lg" /></div>
+          <h2 class="empty-title">{{ filterEmptyMessage.title }}</h2>
+          <p class="empty-hint">{{ filterEmptyMessage.hint }}</p>
+          <div class="empty-actions">
+            <button class="btn primary" type="button" @click="clearFilterAndSearch">Show all cases</button>
+          </div>
+        </div>
+      </template>
+    </div>
   </main>
 
   <!-- Manage Access modal (owner-only) -->
-  <div
-    class="modal-overlay"
-    :class="{ open: manageOpen }"
-    :inert="!manageOpen"
-    @click.self="manageOpen = false"
-  >
-    <div ref="manageModalBox" class="modal-box modal-box--form" role="dialog" aria-modal="true">
-      <h2>Manage access</h2>
+  <ManageAccessModal
+    :open="manageOpen"
+    :report-id="reportId"
+    :current-user-id="user?.id"
+    @close="manageOpen = false"
+    @membership-changed="onMembershipChanged"
+  />
 
-      <div>
-        <div v-for="member in members" :key="member.id" class="member-row">
-          <div class="member-row-id">
-            <span class="mono-id" :title="member.user_id">
-              {{ member.user_id }}{{ member.user_id === user?.id ? ' (you)' : '' }}
-            </span>
-          </div>
-          <div class="member-row-actions">
-            <select
-              class="role-select"
-              :value="member.role"
-              :disabled="roleChangeBusy[member.id]"
-              @change="handleRoleChange(member, $event.target.value)"
-            >
-              <option value="owner">Owner</option>
-              <option value="editor">Editor</option>
-              <option value="viewer">Viewer</option>
-            </select>
-            <button
-              class="icon-btn"
-              type="button"
-              aria-label="Remove member"
-              @click="handleRemoveMember(member)"
-            >
-              <Icon name="trash2" cls="icon-sm" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="auth-field" style="margin-top: 16px">
-        <label class="auth-label" for="report-invite-id">Invite by email</label>
-        <input
-          id="report-invite-id"
-          v-model="inviteValue"
-          type="email"
-          class="auth-input"
-          :disabled="inviteBusy"
-          placeholder="teammate@example.com"
-        />
-        <p class="field-hint">
-          If they already have an account they're added immediately; otherwise we send them an
-          invite email to create one.
-        </p>
-      </div>
-      <div class="auth-field">
-        <label class="auth-label" for="report-invite-role">Role</label>
-        <select id="report-invite-role" v-model="inviteRole" class="auth-input" :disabled="inviteBusy">
-          <option value="viewer">Viewer</option>
-          <option value="editor">Editor</option>
-          <option value="owner">Owner</option>
-        </select>
-      </div>
-
-      <p v-if="inviteError" class="auth-error">{{ inviteError }}</p>
-      <p v-if="inviteSuccess" class="auth-success">{{ inviteSuccess }}</p>
-
-      <div class="modal-actions">
-        <button class="btn" type="button" @click="manageOpen = false">Close</button>
-        <button class="btn primary" type="button" :disabled="inviteBusy" @click="submitInvite">
-          {{ inviteBusy ? 'Adding…' : 'Add member' }}
-        </button>
-      </div>
-    </div>
-  </div>
+  <SettingsModal :open="settingsOpen" @close="settingsOpen = false" />
 
   <!-- Bulk-mark confirm modal -->
   <div
@@ -973,7 +1047,17 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div class="toast" :class="{ show: toastVisible }">
+  <BusyOverlay fixed :active="pdfBusy" label="Generating PDF…" />
+
+  <div
+    class="toast"
+    :class="[`toast--${toastType}`, { show: toastVisible }]"
+    :style="{ top: toastTop + 'px' }"
+  >
+    <Icon :name="TOAST_ICONS[toastType]" cls="icon-sm toast-icon" />
     <span class="toast-msg">{{ toastMessage }}</span>
+    <button type="button" class="toast-action" :hidden="!toastAction" @click="handleToastAction">
+      {{ toastAction?.label }}
+    </button>
   </div>
 </template>

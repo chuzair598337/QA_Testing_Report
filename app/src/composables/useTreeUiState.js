@@ -11,7 +11,7 @@
 // real DB id), reset on reload exactly like the legacy in-memory app. Each
 // module/sub-module defaults to collapsed, unpinned, unlocked until touched
 // (same defaults buildModules() gave every node in the legacy app).
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted, onUnmounted } from 'vue'
 
 export function useTreeUiState() {
   const collapsedModules = reactive({})
@@ -32,6 +32,14 @@ export function useTreeUiState() {
   function closeMenu() {
     openMenuKey.value = null
   }
+  // Module/sub-module "more options" menus are teleported to <body> (see
+  // ModuleCard.vue/SubModuleCard.vue) so .module's overflow:hidden — there
+  // for the card's rounded corners — can't clip them. Teleported +
+  // position:fixed means they don't move with the page on scroll, so close
+  // on scroll rather than tracking/repositioning — same UX other floating
+  // menus (native <select>, etc.) already use.
+  onMounted(() => window.addEventListener('scroll', closeMenu, { passive: true }))
+  onUnmounted(() => window.removeEventListener('scroll', closeMenu))
 
   function isModuleCollapsed(id) {
     return id in collapsedModules ? collapsedModules[id] : true

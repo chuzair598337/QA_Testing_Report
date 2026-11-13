@@ -18,6 +18,8 @@
     --fail-bg:#FCEBE7;
     --pending:#8B95A5;
     --pending-bg:#EEF1F5;
+    --warn:#9A6400; /* AA-checked amber-on-white for the toast "warning" type — no prior warning color existed */
+    --warn-bg:#FCF1D9;
     --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
     --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --radius: 8px;
@@ -45,6 +47,8 @@
     --fail-bg:#2E1712;
     --pending:#7C8AA0;
     --pending-bg:#1D2536;
+    --warn:#F0B429;
+    --warn-bg:#332708;
     --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.28);
     --hover-bg:#1E293C;
     --surface-alt:#1B2334;

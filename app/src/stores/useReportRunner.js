@@ -51,16 +51,22 @@ export function useReportRunner() {
     return { error: null }
   }
 
-  const statsView = computed(
-    () =>
-      stats.value || {
-        total_tests: 0,
-        pass_count: 0,
-        fail_count: 0,
-        pending_count: 0,
-        pass_percent: 0,
-      },
-  )
+  // Computed client-side from the live `tests` ref, the same aggregation
+  // subModuleStats/moduleStats below already do — NOT read from `stats`
+  // (the report_stats DB view fetched once at load time). A DB-view
+  // snapshot can't reflect a local status/note edit until the next full
+  // reload, which left the header KPI cards showing stale Pass/Fail counts
+  // after Reset-all (and, in principle, after any single status change).
+  // pass_percent matches report_stats' own rounding (1 decimal place) so
+  // this reads identically to what the view would have returned.
+  const statsView = computed(() => {
+    const total = tests.value.length
+    const pass = tests.value.filter((t) => t.status === 'pass').length
+    const fail = tests.value.filter((t) => t.status === 'fail').length
+    const pending = total - pass - fail
+    const pass_percent = total === 0 ? 0 : Math.round((pass / total) * 1000) / 10
+    return { total_tests: total, pass_count: pass, fail_count: fail, pending_count: pending, pass_percent }
+  })
 
   const sortedModules = computed(() => [...modules.value].sort((a, b) => a.order_index - b.order_index))
 
